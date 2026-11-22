@@ -11,6 +11,7 @@ from orchestrator import RelayOrchestrator
 from redaction import redact_sensitive_text
 from schemas import EvidenceEvent, PipelineStatus, PipelineTaskResponse, ReportRequest
 from storage import SQLiteTaskStore
+from switch_room import SwitchRoomNotifier
 
 logger = logging.getLogger("relay.worker")
 
@@ -20,9 +21,15 @@ class _LeaseLost(RuntimeError):
 
 
 class PipelineWorker:
-    def __init__(self, store: SQLiteTaskStore, orchestrator: RelayOrchestrator):
+    def __init__(
+        self,
+        store: SQLiteTaskStore,
+        orchestrator: RelayOrchestrator,
+        room_notifier: SwitchRoomNotifier | None = None,
+    ):
         self.store = store
         self.orchestrator = orchestrator
+        self.room_notifier = room_notifier if room_notifier is not None else SwitchRoomNotifier.from_env()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 
@@ -45,10 +52,31 @@ class PipelineWorker:
         self._stop.set()
         if self._thread:
             self._thread.join(timeout=8)
+        if self.room_notifier:
+            self.room_notifier.close()
 
     @property
     def is_running(self) -> bool:
         return bool(self._thread and self._thread.is_alive())
+
+    def _notify_room_progress(self, task: PipelineTaskResponse) -> None:
+        if not self.room_notifier:
+            return
+        try:
+            sandbox_result = task.sandbox_result
+            reviewer = task.reviewer
+            delivered = self.room_notifier.notify(
+                task.task_id,
+                task.current_stage,
+                task.status.value,
+                tests_passed=sandbox_result.tests_passed if sandbox_result else None,
+                security_assessment=reviewer.security_assessment if reviewer else None,
+                recommendation=reviewer.recommendation if reviewer else None,
+            )
+            if not delivered:
+                logger.warning("Switch room progress delivery failed", extra={"task_id": task.task_id})
+        except Exception:
+            logger.warning("Switch room progress delivery failed", extra={"task_id": task.task_id})
 
     def _run(self) -> None:
         while not self._stop.is_set():
@@ -100,6 +128,7 @@ class PipelineWorker:
             if not self.store.save_worker_task(task_id, attempt, task):
                 lease_lost.set()
                 raise _LeaseLost(f"Worker lease lost for task {task_id}.")
+            self._notify_room_progress(task)
             for offset, event in enumerate(new_events):
                 if event.stage == "MODEL_USAGE":
                     details = event.details
