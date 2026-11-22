@@ -46,3 +46,15 @@ def test_gemini_rehearsal_fails_closed_without_key():
     assert result.returncode == 2
     assert "GEMINI_API_KEY is required" in result.stderr
     assert "Bearer " not in result.stdout + result.stderr
+
+
+def test_live_gemini_rehearsal_checks_isolation_before_submit_and_never_approves():
+    source = (ROOT / "relay-ai/scripts/rehearse_checkout_gemini.py").read_text(encoding="utf-8")
+
+    assert 'os.environ["RELAY_ALLOW_UNSAFE_SUBPROCESS"] = "false"' in source
+    assert source.index('if not os.environ.get("GEMINI_API_KEY"') < source.index("import main as relay_api")
+    assert source.index("if not sandbox.docker_available or not sandbox.sandbox_image_available") < source.index(
+        'client.post(\n                "/api/v1/tasks"'
+    )
+    assert 'client.post(\n                "/api/v1/tasks/' not in source
+    assert '"/actions"' not in source

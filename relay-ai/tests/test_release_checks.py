@@ -76,6 +76,15 @@ def test_production_configuration_requires_auth_and_immutable_sandbox_image(tmp_
     assert "SHA-256" in mutable_image.stderr
 
 
+def test_production_configuration_rejects_host_subprocess_mode(tmp_path):
+    result = _import_production(
+        tmp_path / "unsafe-subprocess",
+        RELAY_ALLOW_UNSAFE_SUBPROCESS="true",
+    )
+    assert result.returncode != 0
+    assert "cannot enable RELAY_ALLOW_UNSAFE_SUBPROCESS" in result.stderr
+
+
 def test_browser_origin_and_user_roles_are_enforced(monkeypatch):
     monkeypatch.setattr("main.AUTH_USERS", {"viewer": "viewer-token", "operator": "operator-token"})
     monkeypatch.setattr("main.AUTH_ROLES", {"viewer": "viewer", "operator": "operator"})

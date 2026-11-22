@@ -92,11 +92,11 @@ def test_manual_retry_is_bounded_by_attempt_limit(tmp_path):
     assert "maximum retry count" in message
 
 
-def test_concurrent_worker_claims_are_unique_and_persist_ordered_events(tmp_path):
+def test_concurrent_worker_claims_scale_and_persist_ordered_events(tmp_path):
     database = str(tmp_path / "concurrent.sqlite3")
     coordinator = SQLiteTaskStore(database)
-    task_ids = [f"concurrent-{index}" for index in range(8)]
-    stores = [SQLiteTaskStore(database) for _ in task_ids]
+    task_ids = [f"concurrent-{index}" for index in range(64)]
+    worker_stores = [SQLiteTaskStore(database) for _ in range(16)]
 
     for task_id in task_ids:
         task = _queued_task(task_id)
@@ -110,9 +110,16 @@ def test_concurrent_worker_claims_are_unique_and_persist_ordered_events(tmp_path
         ))
         coordinator.create_task(task, {"main.py": "print('ok')"}, max_attempts=1)
 
-    with ThreadPoolExecutor(max_workers=len(stores)) as executor:
-        claims = list(executor.map(lambda store: store.claim_job(), stores))
+    def drain_queue(store):
+        claims = []
+        while claim := store.claim_job():
+            claims.append(claim)
+        return claims
 
+    with ThreadPoolExecutor(max_workers=len(worker_stores)) as executor:
+        claim_batches = list(executor.map(drain_queue, worker_stores))
+
+    claims = [claim for batch in claim_batches for claim in batch]
     claimed_ids = [claim["task_id"] for claim in claims if claim is not None]
     assert len(claimed_ids) == len(task_ids)
     assert len(set(claimed_ids)) == len(task_ids)
@@ -124,7 +131,7 @@ def test_concurrent_worker_claims_are_unique_and_persist_ordered_events(tmp_path
         assert [event.stage for event in events] == ["WORKER_CLAIM", "INGESTION"]
         assert coordinator.count_events(task_id) == 2
 
-    assert all(store.claim_job() is None for store in stores)
+    assert all(store.claim_job() is None for store in worker_stores)
 
 
 def test_worker_failure_persists_terminal_state_and_redacted_diagnostic(tmp_path, monkeypatch):

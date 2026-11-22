@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "updated": "2026-11-10",
+  "note": "No deployment target has been selected. These are BLOCKED host/owner actions, not claims that production verification passed.",
+  "blockers": [
+    {"id":"H6-TARGET-ISOLATION","status":"BLOCKED","exact_ask":"Select the deployment host, then have its authorized operator run deploy/run_target_host_drills.sh against the pinned sandbox image and return the sanitized pass/fail summary plus image digest."},
+    {"id":"H10-PROXY-AUTH-CORS","status":"BLOCKED","exact_ask":"Select the public hostname and target host; install the Nginx template with real certificate paths, configure production auth/CORS in the protected service environment, run nginx -t and the target smoke script, and record sanitized evidence."},
+    {"id":"H10-BACKUP-ALERT","status":"BLOCKED","exact_ask":"Assign the backup alert receiver and its owner, place its HTTPS webhook in the host secret manager, run one scheduled freshness-alert drill, and record the receiver's delivery confirmation without recording the URL."},
+    {"id":"H10-RESTORE-DRILL","status":"BLOCKED","exact_ask":"Name the recovery operator and approve a maintenance window; restore a selected production backup into a new isolated directory, verify task/workspace integrity, and record the archive reference and outcome."},
+    {"id":"H10-ACCESSIBILITY-REVIEW","status":"BLOCKED","exact_ask":"Assign a keyboard and screen-reader reviewer and supported browser/assistive-technology pair; complete the release checklist and record findings and retest evidence."},
+    {"id":"H10-LOAD-REVIEW","status":"BLOCKED","exact_ask":"Choose the target host and approve a workload profile (concurrency, ramp, duration, and latency/error thresholds); run the load drill and record host resource and API results."},
+    {"id":"H10-OWNERS","status":"BLOCKED","exact_ask":"Name the primary operator, backup operator, and security/escalation contact, with their incident-response path and change-window owner."},
+    {"id":"H10-GEMINI-DATA-APPROVAL","status":"BLOCKED","exact_ask":"Obtain the data owner's written approval for sending repository/report data to the configured Gemini service, including the applicable data handling and retention terms; record only the approval reference."},
+    {"id":"H10-SLO-ACCEPTANCE","status":"BLOCKED","exact_ask":"Assign an SLO owner and have the service owner accept the proposed availability, pipeline completion, queue latency, recovery point, and recovery time objectives or supply revised thresholds."}
+  ]
+}

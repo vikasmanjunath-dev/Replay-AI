@@ -37,7 +37,13 @@ class SandboxRunner:
     def __init__(self, timeout_seconds: int = 30):
         self.timeout_seconds = timeout_seconds
         self.docker_available = self._detect_docker()
-        self.allow_unsafe_subprocess = os.environ.get("RELAY_ALLOW_UNSAFE_SUBPROCESS", "false").lower() == "true"
+        runtime_environment = os.environ.get("RELAY_ENV", "development").strip().lower()
+        unsafe_subprocess_requested = (
+            os.environ.get("RELAY_ALLOW_UNSAFE_SUBPROCESS", "false").strip().lower() == "true"
+        )
+        # Keep the production boundary inside the runner too, so callers that
+        # bypass main.py cannot enable host execution by setting one flag.
+        self.allow_unsafe_subprocess = unsafe_subprocess_requested and runtime_environment == "development"
         self.docker_image = os.environ.get("RELAY_SANDBOX_IMAGE", "relay-ai-sandbox:python3.11")
         profile = os.environ.get("RELAY_TEST_PROFILE", "pytest").strip().lower()
         profiles = {

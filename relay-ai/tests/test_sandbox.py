@@ -44,6 +44,27 @@ def test_sandbox_executes_pytest_cleanly(sample_codebase, runner):
     assert "ZeroDivisionError" in result.stdout or "ZeroDivisionError" in result.stderr
 
 
+def test_sandbox_never_uses_host_subprocess_in_production_without_docker(monkeypatch):
+    monkeypatch.setenv("RELAY_ENV", "production")
+    monkeypatch.setenv("RELAY_ALLOW_UNSAFE_SUBPROCESS", "true")
+    monkeypatch.setattr(SandboxRunner, "_detect_docker", lambda _self: False)
+    monkeypatch.setattr(SandboxRunner, "_detect_sandbox_image", lambda _self: False)
+    runner = SandboxRunner()
+    monkeypatch.setattr(
+        runner,
+        "_run_in_subprocess",
+        lambda *_args, **_kwargs: pytest.fail("untrusted test code must not execute on the host"),
+    )
+
+    result = runner.run_tests({"test_probe.py": "def test_probe(): assert True\n"})
+
+    assert runner.allow_unsafe_subprocess is False
+    assert runner.isolation_mode == "unavailable"
+    assert result.exit_code == 125
+    assert result.tests_passed is False
+    assert "Tests were not executed" in result.stderr
+
+
 def test_sandbox_validates_and_applies_unified_diff(sample_codebase, runner):
     """Verify that a valid unified diff applies cleanly and causes tests to pass."""
     valid_patch = (

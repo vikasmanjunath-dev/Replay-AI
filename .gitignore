@@ -10,3 +10,6 @@ coverage/
 *.log
 .env*
 !.env.example
+demo-recordings/*.mov
+demo-recordings/*.mp4
+demo-recordings/*.mkv

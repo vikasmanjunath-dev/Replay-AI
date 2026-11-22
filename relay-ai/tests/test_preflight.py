@@ -4,6 +4,13 @@ from pathlib import Path
 from preflight import REQUIRED_CSP_DIRECTIVES, SIGNOFF_FIELDS, evaluate_preflight
 
 
+def test_release_signoff_template_matches_preflight_schema():
+    template_path = Path(__file__).resolve().parents[2] / "deploy" / "RELEASE_SIGNOFF_TEMPLATE.json"
+    template = json.loads(template_path.read_text(encoding="utf-8"))
+
+    assert set(template) == set(SIGNOFF_FIELDS)
+
+
 def test_preflight_reports_ready_local_configuration_without_disclosing_tokens(tmp_path):
     root = tmp_path
     (root / "dist" / "assets").mkdir(parents=True)
