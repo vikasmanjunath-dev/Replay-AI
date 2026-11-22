@@ -24,7 +24,7 @@ import ipaddress
 import re
 from contextlib import nullcontext
 from pathlib import Path, PurePosixPath
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 from urllib.parse import urlsplit
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile, status
@@ -36,6 +36,8 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from orchestrator import RelayOrchestrator
 from schemas import (
     EvidenceEvent,
+    GitHubPullRequestRequest,
+    GitHubPullRequestResponse,
     PipelineStatus,
     PipelineTaskResponse,
     ReportRequest,
@@ -47,6 +49,7 @@ from observability import RequestMetrics, configure_logging
 from redaction import redact_sensitive_text
 from path_utils import normalize_relative_path, normalize_snapshot_paths
 from repository_targets import RepositoryTargetError, RepositoryTargetRegistry
+from github_adapter import GitHubAdapter, GitHubAdapterError, GitHubConfig
 
 configure_logging()
 logger = logging.getLogger("relay.api")
@@ -352,7 +355,7 @@ def _record_task_action(
     *,
     idempotency_key: str | None = None,
     request_hash: str | None = None,
-    response: PipelineTaskResponse | None = None,
+    response: Any | None = None,
 ) -> None:
     """Persist an action with its API request correlation ID in existing audit metadata."""
     audit_details = dict(details or {})
@@ -386,6 +389,109 @@ def get_repository_targets(request: Request):
         return REPOSITORY_TARGETS.list_targets()
     except RepositoryTargetError as error:
         raise HTTPException(status_code=503, detail="A configured repository target could not be inspected.") from error
+
+
+def _github_adapter() -> GitHubAdapter:
+    try:
+        config = GitHubConfig.from_env()
+    except RuntimeError as error:
+        raise HTTPException(status_code=503, detail="GitHub integration configuration is invalid.") from error
+    if config is None:
+        raise HTTPException(status_code=503, detail="GitHub integration is not configured.")
+    return GitHubAdapter(config)
+
+
+@app.get("/api/v1/github/repositories/{repository_id}")
+def read_github_repository(repository_id: str, request: Request):
+    """Read metadata for an operator-allow-listed GitHub repository."""
+    if request.state.role != "operator":
+        raise HTTPException(status_code=403, detail="Operator access is required.")
+    adapter = _github_adapter()
+    try:
+        return adapter.get_repository(repository_id)
+    except GitHubAdapterError as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error
+    finally:
+        adapter.close()
+
+
+@app.get("/api/v1/github/repositories/{repository_id}/contents")
+def read_github_repository_content(repository_id: str, path: str, request: Request, ref: str | None = None):
+    """Read one bounded UTF-8 file from an operator-allow-listed repository."""
+    if request.state.role != "operator":
+        raise HTTPException(status_code=403, detail="Operator access is required.")
+    adapter = _github_adapter()
+    try:
+        return adapter.get_contents(repository_id, path, ref=ref)
+    except GitHubAdapterError as error:
+        client_input_error = "path is invalid" in str(error) or "reference is invalid" in str(error)
+        raise HTTPException(status_code=400 if client_input_error else 502, detail=str(error)) from error
+    finally:
+        adapter.close()
+
+
+@app.post("/api/v1/tasks/{task_id}/pull-request", response_model=GitHubPullRequestResponse)
+def open_task_pull_request(task_id: str, payload: GitHubPullRequestRequest, request: Request):
+    """Open a PR only for a human-approved, committed task whose remote SHAs match."""
+    task = _task_for_actor(task_id, request)
+    if request.state.role != "operator":
+        raise HTTPException(status_code=403, detail="Operator access is required.")
+    if not task.repository_id or not task.repository_base_revision or not task.commit_hash:
+        raise HTTPException(status_code=409, detail="Task has no configured repository and commit provenance.")
+    if task.is_approved is not True or not task.is_committed or task.status != PipelineStatus.COMMITTED:
+        raise HTTPException(status_code=409, detail="A passing, human-approved, committed task is required before opening a pull request.")
+    if (
+        not task.sandbox_result or not task.sandbox_result.tests_passed
+        or not task.reviewer or task.reviewer.security_assessment != "PASS"
+        or task.reviewer.recommendation != "APPROVE"
+    ):
+        raise HTTPException(status_code=409, detail="Task evidence no longer satisfies the approval policy.")
+
+    idempotency_key = request.headers.get("Idempotency-Key")
+    request_hash = hashlib.sha256(payload.model_dump_json().encode("utf-8")).hexdigest()
+    if idempotency_key is not None:
+        if not idempotency_key or len(idempotency_key) > 128 or any(ord(char) < 33 or ord(char) > 126 for char in idempotency_key):
+            raise HTTPException(status_code=400, detail="Idempotency-Key must be 1..128 printable ASCII characters.")
+        previous = tasks_db.get_action_by_idempotency_key(task_id, idempotency_key)
+        if previous:
+            if previous["actor"] != request.state.actor or previous["action"] != "open_pull_request" or previous["request_hash"] != request_hash:
+                raise HTTPException(status_code=409, detail="Idempotency-Key was already used for a different action.")
+            if previous["response_json"]:
+                return GitHubPullRequestResponse.model_validate_json(previous["response_json"])
+            raise HTTPException(status_code=409, detail="Pull request action is recorded without a replayable response.")
+
+    adapter = _github_adapter()
+    try:
+        result = adapter.create_pull_request(
+            task.repository_id,
+            approved=bool(task.is_approved),
+            head_branch=payload.head_branch,
+            base_branch=payload.base_branch,
+            expected_base_sha=task.repository_base_revision,
+            expected_head_sha=task.commit_hash,
+            title=payload.title,
+            body=payload.body,
+            draft=payload.draft,
+        )
+    except GitHubAdapterError as error:
+        message = str(error)
+        if "revisions do not match" in message:
+            code = 409
+        elif message == "Git branch name is invalid.":
+            code = 400
+        else:
+            code = 502
+        raise HTTPException(status_code=code, detail=message) from error
+    finally:
+        adapter.close()
+
+    response = GitHubPullRequestResponse(repository=task.repository_id, **result)
+    _record_task_action(
+        task_id, "open_pull_request", request, response.state, None,
+        {"repository": response.repository, "number": response.number, "url": response.url, "already_open": response.already_open},
+        idempotency_key=idempotency_key, request_hash=request_hash, response=response,
+    )
+    return response
 
 
 @app.get("/health")
@@ -1175,12 +1281,27 @@ def handle_task_action(task_id: str, action_req: TaskActionRequest, request: Req
 @app.get("/scenarios", include_in_schema=False)
 def get_benchmark_scenarios():
     """
-    Returns 3 standardized benchmark bug scenarios for instant hackathon demonstrations:
-    1. Off-by-one index error in payment tier calculator (passes tests when fixed).
-    2. Regression bug with failing test assertions.
-    3. Security vulnerability (e.g. unsafe eval).
+    Returns the seeded checkout demo and three additional benchmark scenarios.
     """
+    demo_store_root = Path(__file__).resolve().parents[1] / "demo-store"
+    demo_store_root = demo_store_root.resolve()
+    demo_files = ("src/__init__.py", "src/checkout.py", "tests/test_checkout.py")
+    checkout_codebase: Dict[str, str] = {}
+    for filename in demo_files:
+        path = (demo_store_root / filename).resolve()
+        if not path.is_relative_to(demo_store_root) or not path.is_file():
+            raise RuntimeError("The seeded checkout demo repository is incomplete.")
+        checkout_codebase[filename] = path.read_text(encoding="utf-8")
+
     return [
+        {
+            "id": "scenario_checkout_discount_twice",
+            "name": "Seeded demo: checkout discount applied twice",
+            "description": "A $10 coupon reduces a $100 cart to $80 because calculate_total subtracts the discount twice.",
+            "category": "functional_bug",
+            "bug_report": "At checkout, a $10 discount code is applied twice. A $100 cart should total $90.00, but checkout charges $80.00. Fix calculate_total and keep the regression test passing.",
+            "codebase": checkout_codebase,
+        },
         {
             "id": "scenario_off_by_one",
             "name": "Scenario 1: Off-by-One Tier Index Crash",

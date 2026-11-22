@@ -7,6 +7,7 @@ import json
 import sqlite3
 import threading
 import datetime
+from typing import Any
 from collections.abc import Iterator, MutableMapping
 from decimal import Decimal
 from pathlib import Path
@@ -488,7 +489,7 @@ class SQLiteTaskStore(MutableMapping[str, PipelineTaskResponse]):
         details: dict | None = None,
         idempotency_key: str | None = None,
         request_hash: str | None = None,
-        response: PipelineTaskResponse | None = None,
+        response: Any | None = None,
     ) -> None:
         with self._lock, self._connect() as connection:
             connection.execute(

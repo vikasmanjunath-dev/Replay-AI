@@ -235,6 +235,27 @@ class TaskActionRequest(BaseModel):
     )
 
 
+class GitHubPullRequestRequest(BaseModel):
+    """Open a PR for a verified commit already published to an allow-listed head branch."""
+    model_config = ConfigDict(extra="forbid")
+
+    head_branch: str = Field(..., min_length=1, max_length=240)
+    base_branch: str = Field(..., min_length=1, max_length=240)
+    title: str = Field(..., min_length=1, max_length=200)
+    body: str = Field(default="", max_length=20_000)
+    draft: bool = False
+
+
+class GitHubPullRequestResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    repository: str
+    number: int
+    url: str
+    state: str
+    already_open: bool = False
+
+
 class PipelineTaskResponse(BaseModel):
     """Complete aggregated task lifecycle state returned by FastAPI."""
     model_config = ConfigDict(extra="allow")
