@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Activity, ArrowRight, Check, CircleAlert, FileArchive, LoaderCircle, Monitor, Moon, Save, ShieldCheck, Sun, Trash2, UploadCloud, X } from 'lucide-react';
 import { AbortableRequests } from './abortableRequests.js';
+import { describeRequestError } from './userFacingError.js';
+import { getSessionBadgeLabel } from './dashboardLabels.js';
 import { readStorage, removeStorage, writeStorage } from './safeStorage.js';
 
 type TimelineEvent = { timestamp: string; stage: string; status: string; actor?: string; correlation_id?: string | null; details: Record<string, unknown> };
@@ -20,6 +22,8 @@ type Scenario = { id: string; name: string; description: string; bug_report: str
 type Session = { actor: string; role: 'viewer' | 'operator' };
 type RepositoryTarget = { repository_id: string; branch: string; revision: string; clean: boolean };
 type ActionAudit = { action_id: number; actor: string; action: string; outcome: string; notes?: string | null; details: Record<string, unknown>; created_at: string };
+type PullRequestResult = { repository: string; number: number; url: string; state: string; already_open: boolean };
+type GitHubRepository = { id: number; full_name: string; private: boolean; default_branch: string; html_url: string };
 type Readiness = { status: 'checking' | 'ready' | 'degraded' | 'offline' | 'auth'; detail?: string };
 type ThemePreference = 'system' | 'light' | 'dark';
 type ApiErrorPayload = { detail?: unknown; request_id?: unknown };
@@ -54,6 +58,22 @@ async function api<T>(path: string, init?: RequestInit, onResponse?: (response: 
   onResponse?.(response);
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
+}
+
+function safeGitHubUrl(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && url.origin === 'https://github.com' ? url.href : null;
+  } catch { return null; }
+}
+
+function isGitHubRepository(value: unknown): value is GitHubRepository {
+  if (!value || typeof value !== 'object') return false;
+  const repository = value as Partial<GitHubRepository>;
+  return Number.isSafeInteger(repository.id) && typeof repository.full_name === 'string'
+    && typeof repository.private === 'boolean' && typeof repository.default_branch === 'string'
+    && repository.default_branch.trim().length > 0 && safeGitHubUrl(repository.html_url) !== null;
 }
 
 export default function App() {
@@ -93,6 +113,15 @@ export default function App() {
   const [eventPageOffset, setEventPageOffset] = useState(0);
   const [reviewNotes, setReviewNotes] = useState('');
   const [commitMessage, setCommitMessage] = useState('');
+  const [prHead, setPrHead] = useState('');
+  const [prBase, setPrBase] = useState('');
+  const [prTitle, setPrTitle] = useState('');
+  const [prBody, setPrBody] = useState('');
+  const [prDraft, setPrDraft] = useState(false);
+  const [pullRequest, setPullRequest] = useState<PullRequestResult | null>(null);
+  const [pullRequestTaskId, setPullRequestTaskId] = useState('');
+  const [githubRepository, setGithubRepository] = useState<GitHubRepository | null>(null);
+  const [githubRepositoryError, setGithubRepositoryError] = useState('');
 
   const resolvedTheme = themePreference === 'system' ? (systemDark ? 'dark' : 'light') : themePreference;
   useEffect(() => {
@@ -142,7 +171,7 @@ export default function App() {
       setError('');
     } catch (reason) {
       if (requests.isCurrent(controller)) {
-        setError(reason instanceof Error ? reason.message : 'Could not reach the API.');
+        setError(describeRequestError(reason, 'Could not load tasks.'));
       }
     } finally {
       requests.finish(controller);
@@ -196,6 +225,35 @@ export default function App() {
     const timer = window.setInterval(() => { void refresh(); }, 1800);
     return () => window.clearInterval(timer);
   }, [task?.task_id, task?.status, refresh]);
+  useEffect(() => {
+    if (session.role !== 'operator' || !task?.is_committed || !task.repository_id) {
+      setGithubRepository(null); setGithubRepositoryError('');
+      return;
+    }
+    let active = true;
+    setGithubRepository(null); setGithubRepositoryError('');
+    void api<unknown>(`/api/v1/github/repositories/${encodeURIComponent(task.repository_id)}`)
+      .then((repository) => {
+        if (!active) return;
+        if (!isGitHubRepository(repository)) throw new Error('GitHub returned incomplete repository metadata.');
+        setGithubRepository(repository);
+        setPrBase(repository.default_branch);
+      })
+      .catch((reason) => { if (active) setGithubRepositoryError(describeRequestError(reason, 'GitHub repository is not available.')); });
+    return () => { active = false; };
+  }, [session.role, task?.task_id, task?.is_committed, task?.repository_id]);
+  useEffect(() => {
+    if (!task?.task_id || !task.is_committed) return;
+    setPrHead('');
+    setPrBase('');
+    setPrTitle((task.triage?.title || '').slice(0, 200));
+    const summary = task.investigation_patch?.summary_of_changes || task.investigation_patch?.root_cause || task.bug_report;
+    const verification = task.sandbox_result?.tests_passed ? 'Tests passed in the recorded sandbox run.' : 'See the task evidence for sandbox results.';
+    setPrBody(`## Summary\n${summary}\n\n## Verification\n${verification}`.slice(0, 20_000));
+    setPrDraft(false);
+    setPullRequest(null);
+    setPullRequestTaskId('');
+  }, [task?.task_id, task?.is_committed, task?.triage?.title, task?.investigation_patch?.summary_of_changes, task?.investigation_patch?.root_cause, task?.bug_report, task?.sandbox_result?.tests_passed]);
 
   async function submit() {
     setBusy(true); setError(''); setMessage('');
@@ -210,7 +268,7 @@ export default function App() {
         created = await api<Task>('/api/v1/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_message: report, codebase, repository_id: repositoryId || null }) });
       }
       setTask(created); setActions([]); setTotalActions(0); setActionPageOffset(0); setEvents([]); setTotalEvents(0); setEventPageOffset(0); setReviewNotes(''); setCommitMessage(''); setMessage('Task queued. Progress and evidence will appear here.'); await refresh();
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Submission failed.'); }
+    } catch (reason) { setError(describeRequestError(reason, 'Submission failed.')); }
     finally { setBusy(false); }
   }
 
@@ -228,8 +286,37 @@ export default function App() {
       setTask(updated);
       setMessage(({ approve: 'Patch approved.', reject: 'Patch rejected.', apply: updated.repository_id ? `Patch applied to ${updated.repository_id}.` : 'Patch applied to its task workspace.', commit: `Created Git commit ${updated.commit_hash || ''}.`, cancel: 'Cancellation requested.', retry: 'Task queued for retry.' })[action]);
       await refresh();
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Action failed.'); }
+    } catch (reason) { setError(describeRequestError(reason, 'Action failed.')); }
     finally { setBusy(false); }
+  }
+
+  async function openPullRequest() {
+    if (!task) return;
+    setBusy(true); setError(''); setMessage('');
+    const keySlot = `relay-action-key:${task.task_id}:open_pull_request`;
+    const idempotencyKey = readStorage('session', keySlot) || crypto.randomUUID();
+    writeStorage('session', keySlot, idempotencyKey);
+    try {
+      const result = await api<PullRequestResult>(`/api/v1/tasks/${task.task_id}/pull-request`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey },
+        body: JSON.stringify({ head_branch: prHead.trim(), base_branch: prBase.trim(), title: prTitle.trim(), body: prBody.trim(), draft: prDraft }),
+      });
+      removeStorage('session', keySlot);
+      setPullRequest(result);
+      setPullRequestTaskId(task.task_id);
+      setMessage(result.already_open ? `Pull request #${result.number} is already open.` : `Opened pull request #${result.number}.`);
+      await refresh();
+    } catch (reason) { setError(describeRequestError(reason, 'Could not open pull request.')); }
+    finally { setBusy(false); }
+  }
+
+  async function copyRevision(label: string, revision: string) {
+    try {
+      await navigator.clipboard.writeText(revision);
+      setError(''); setMessage(`${label} copied to clipboard.`);
+    } catch {
+      setError('Clipboard access is unavailable. Select the displayed revision and copy it manually.');
+    }
   }
 
   async function deleteTask(item: Task) {
@@ -241,7 +328,7 @@ export default function App() {
       if (task?.task_id === item.task_id) setTask(null);
       setMessage('Task and its stored source data were deleted.');
       await refresh();
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Task deletion failed.'); }
+    } catch (reason) { setError(describeRequestError(reason, 'Task deletion failed.')); }
     finally { setBusy(false); }
   }
 
@@ -270,9 +357,14 @@ export default function App() {
       const url = URL.createObjectURL(await response.blob());
       const link = document.createElement('a'); link.href = url; link.download = `relay-${task.task_id}.patch`; link.click();
       URL.revokeObjectURL(url);
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Patch download failed.'); }
+    } catch (reason) { setError(describeRequestError(reason, 'Patch download failed.')); }
   }
 
+  const recordedPullRequest = actions.find((entry) => entry.action === 'open_pull_request' && safeGitHubUrl(entry.details.url));
+  const recordedPullRequestUrl = safeGitHubUrl(recordedPullRequest?.details.url);
+  const recordedPullRequestNumber = typeof recordedPullRequest?.details.number === 'number' ? recordedPullRequest.details.number : '—';
+  const recordedPullRequestState = typeof recordedPullRequest?.outcome === 'string' ? recordedPullRequest.outcome : 'open';
+  const visiblePullRequest = pullRequestTaskId === task?.task_id && pullRequest ? pullRequest : null;
   return <div className="layout">
     <a className="skip-link sr-only" href="#main-content">Skip to main content</a>
     <aside className="sidebar">
@@ -285,7 +377,7 @@ export default function App() {
       <div className="side-bottom"><i/> API <span>{API ? API.replace(/^https?:\/\//, '') : window.location.host}</span></div>
     </aside>
     <main id="main-content" className="main" tabIndex={-1}>
-      <header className="topbar"><span>RELAY AI <b>/</b> Autonomous pipeline</span><div className="top-actions"><small className={`readiness-badge ${readiness.status}`} aria-live="polite" aria-label={`Pipeline service: ${READINESS_LABELS[readiness.status]}${readiness.detail ? `. ${readiness.detail}` : ''}`} title={readiness.detail || 'Pipeline service readiness'}>{READINESS_LABELS[readiness.status]}</small><small className="session-badge">{session.actor ? `${session.actor} · ${session.role}` : 'Connecting'}</small><input aria-label="Optional API token" type="password" value={apiToken} onChange={(e) => setApiToken(e.target.value)} placeholder="API token (optional)"/><button onClick={saveToken} aria-label="Save API token"><Save size={13}/><span>Save</span></button><button onClick={() => void refresh()} aria-label="Refresh tasks"><Activity size={14}/><span>Refresh</span></button><button className="theme-control" onClick={cycleTheme} aria-label={`Appearance: ${THEME_LABELS[themePreference]}. Activate to use ${THEME_LABELS[NEXT_THEME[themePreference]]}.`} title={`Appearance: ${THEME_LABELS[themePreference]} · Next: ${THEME_LABELS[NEXT_THEME[themePreference]]}`}><span className="theme-control-icon">{themePreference === 'system' ? <Monitor size={14}/> : resolvedTheme === 'dark' ? <Moon size={14}/> : <Sun size={14}/>}</span><span>{THEME_LABELS[themePreference]}</span></button></div></header>
+      <header className="topbar"><span>RELAY AI <b>/</b> Autonomous pipeline</span><div className="top-actions"><small className={`readiness-badge ${readiness.status}`} aria-live="polite" aria-label={`Pipeline service: ${READINESS_LABELS[readiness.status]}${readiness.detail ? `. ${readiness.detail}` : ''}`} title={readiness.detail || 'Pipeline service readiness'}>{READINESS_LABELS[readiness.status]}</small><small className="session-badge">{getSessionBadgeLabel(session, readiness.status)}</small><input aria-label="Optional API token" type="password" value={apiToken} onChange={(e) => setApiToken(e.target.value)} placeholder="API token (optional)"/><button onClick={saveToken} aria-label="Save API token"><Save size={13}/><span>Save</span></button><button onClick={() => void refresh()} aria-label="Refresh tasks"><Activity size={14}/><span>Refresh</span></button><button className="theme-control" onClick={cycleTheme} aria-label={`Appearance: ${THEME_LABELS[themePreference]}. Activate to use ${THEME_LABELS[NEXT_THEME[themePreference]]}.`} title={`Appearance: ${THEME_LABELS[themePreference]} · Next: ${THEME_LABELS[NEXT_THEME[themePreference]]}`}><span className="theme-control-icon">{themePreference === 'system' ? <Monitor size={14}/> : resolvedTheme === 'dark' ? <Moon size={14}/> : <Sun size={14}/>}</span><span>{THEME_LABELS[themePreference]}</span></button></div></header>
       <div className="content">
         <div className="heading"><div><small>ENGINEERING AUTOMATION</small><h1>Issue remediation</h1><p>Turn a bug report into a reviewed patch with test evidence and a human decision.</p></div><span className="pipeline-label"><i/> 3-stage pipeline</span></div>
         {readiness.status !== 'ready' && readiness.status !== 'checking' && <div className={`readiness-notice ${readiness.status}`} role={readiness.status === 'offline' ? 'alert' : 'status'}><span><b>Pipeline service: {READINESS_LABELS[readiness.status]}</b><small>{readiness.detail}</small></span><button disabled={readinessChecking} onClick={() => void checkReadiness()} aria-label="Check pipeline service readiness again">{readinessChecking ? 'Checking…' : 'Check again'}</button></div>}
@@ -315,8 +407,22 @@ export default function App() {
             {session.role === 'operator' && task.status === 'FAILED' && <div className="decisions"><button disabled={busy} onClick={() => void act('retry')}>Retry task</button></div>}
             {session.role === 'operator' && task.is_approved && !task.is_applied && <div className="decisions"><button disabled={busy} onClick={() => void act('apply')}><Check size={15}/> Apply to {task.repository_id || 'task workspace'}</button></div>}
             {session.role === 'operator' && task.is_applied && !task.is_committed && <><label className="field-label" htmlFor="commit-message">COMMIT MESSAGE · OPTIONAL</label><input id="commit-message" className="action-input" maxLength={200} readOnly={task.repository_operation_state === 'COMMITTING'} value={task.repository_operation_state === 'COMMITTING' ? task.commit_message || '' : commitMessage} onChange={(e) => { setCommitMessage(e.target.value); removeStorage('session', `relay-action-key:${task.task_id}:commit`); }} placeholder="Uses a generated message when blank."/>{task.repository_operation_state === 'COMMITTING' && <small className="target-help">Resuming the pending commit with its recorded message.</small>}<div className="decisions"><span className="pending">Patch applied to {task.repository_id || 'isolated task copy'}.</span><button disabled={busy} onClick={() => void act('commit')}><Check size={15}/>{task.repository_operation_state === 'COMMITTING' ? 'Resume commit' : 'Commit'}</button></div></>}
-            {task.is_committed && task.commit_hash && <div className="commit-record"><b>Commit {task.commit_hash.slice(0, 12)}</b><code>{task.commit_message}</code></div>}
+            {task.is_committed && task.commit_hash && <div className="commit-record"><b>Commit {task.commit_hash.slice(0, 12)}</b><code>{task.commit_message}</code><code className="revision-value">{task.commit_hash}</code><button className="copy-revision" onClick={() => void copyRevision('Commit SHA', task.commit_hash!)}>Copy commit SHA</button></div>}
             {task.is_committed && <div className="pending">Committed to {task.repository_id || 'task copy'} · {task.commit_hash}</div>}
+            {session.role === 'operator' && task.is_committed && task.repository_id && <section className="github-pr" aria-label="Open GitHub pull request">
+              <div className="divider">OPEN GITHUB PULL REQUEST</div>
+              {githubRepository && <p className="target-help" role="status" aria-live="polite">Connected repository: <a href={githubRepository.html_url} target="_blank" rel="noreferrer">{githubRepository.full_name}</a></p>}
+              {githubRepositoryError && <p className="target-help" role="alert">{githubRepositoryError} Check that this repository is in the backend GitHub allow-list.</p>}
+              <p className="target-help">Publish the task commit to the head branch first. Its base must match this task’s recorded base revision; Relay checks both exact SHAs before opening the PR.</p>
+              {task.repository_base_revision && <div className="revision-row"><span><small>EXPECTED BASE</small><code>{task.repository_base_revision}</code></span><button className="copy-revision" onClick={() => void copyRevision('Base SHA', task.repository_base_revision!)}>Copy base SHA</button></div>}
+              <label className="field-label" htmlFor="pr-head">PUBLISHED HEAD BRANCH</label><input id="pr-head" className="action-input" maxLength={240} value={prHead} onChange={(event) => { setPrHead(event.target.value); removeStorage('session', `relay-action-key:${task.task_id}:open_pull_request`); }} placeholder="feature/fix-checkout"/>
+              <label className="field-label" htmlFor="pr-base">BASE BRANCH</label><input id="pr-base" className="action-input" maxLength={240} value={prBase} onChange={(event) => { setPrBase(event.target.value); removeStorage('session', `relay-action-key:${task.task_id}:open_pull_request`); }} placeholder="main"/>
+              <label className="field-label" htmlFor="pr-title">TITLE</label><input id="pr-title" className="action-input" maxLength={200} value={prTitle} onChange={(event) => { setPrTitle(event.target.value); removeStorage('session', `relay-action-key:${task.task_id}:open_pull_request`); }} placeholder={task.triage?.title || 'Fix'} />
+              <label className="field-label" htmlFor="pr-body">DESCRIPTION · OPTIONAL</label><textarea id="pr-body" className="action-input" maxLength={20000} value={prBody} onChange={(event) => { setPrBody(event.target.value); removeStorage('session', `relay-action-key:${task.task_id}:open_pull_request`); }} placeholder="Summarize the fix and verification." />
+              <label className="pr-draft"><input type="checkbox" checked={prDraft} onChange={(event) => { setPrDraft(event.target.checked); removeStorage('session', `relay-action-key:${task.task_id}:open_pull_request`); }}/> Create as draft</label>
+              <div className="decisions"><button className="primary" disabled={busy || !prHead.trim() || !prBase.trim() || !prTitle.trim()} onClick={() => void openPullRequest()}>Open pull request <ArrowRight size={15}/></button></div>
+            </section>}
+            {(visiblePullRequest || recordedPullRequestUrl) && <div className="commit-record"><b>Pull request #{visiblePullRequest?.number ?? recordedPullRequestNumber} · {visiblePullRequest?.state || recordedPullRequestState}</b><a href={visiblePullRequest ? safeGitHubUrl(visiblePullRequest.url) || undefined : recordedPullRequestUrl || undefined} target="_blank" rel="noreferrer">View on GitHub</a></div>}
             <div className="timeline"><small className="kicker">ACTIVITY · {totalEvents ? `${Math.max(1, totalEvents - eventPageOffset - events.length + 1)}–${totalEvents - eventPageOffset} OF ${totalEvents} EVENTS` : '0 EVENTS'}</small>{events.map((event, i) => <div key={`${event.timestamp}-${event.stage}-${i}`}><i/><span><b>{event.stage.replaceAll('_', ' ')}</b><small>{event.status} · {event.actor || 'system'} · {new Date(event.timestamp).toLocaleString()}</small>{event.stage === 'MODEL_USAGE' && <div className="model-usage"><small>{String(event.details.provider || 'provider')} · {String(event.details.model || 'unknown model')}</small><small>{String(event.details.prompt_tokens ?? 0)} prompt · {String(event.details.candidate_tokens ?? 0)} generated · {String(event.details.total_tokens ?? 0)} total tokens</small>{event.details.estimated_cost_usd != null && <small>Estimated ${String(event.details.estimated_cost_usd)} · {String(event.details.pricing_label || 'operator pricing')}</small>}</div>}</span></div>)}{!events.length && <p className="side-empty">No activity events on this page.</p>}<div className="event-pagination"><button disabled={eventPageOffset === 0} onClick={() => setEventPageOffset(Math.max(0, eventPageOffset - 50))}>Newer events</button><button disabled={eventPageOffset + events.length >= totalEvents} onClick={() => setEventPageOffset(eventPageOffset + 50)}>Older events</button></div></div>
             <div className="timeline action-audit"><small className="kicker">OPERATOR ACTION AUDIT · {totalActions ? `${Math.max(1, totalActions - actionPageOffset - actions.length + 1)}–${totalActions - actionPageOffset} OF ${totalActions} RECORDS` : '0 RECORDS'}</small>{actions.map((entry) => <div key={entry.action_id}><i/><span><b>{entry.action.replaceAll('_', ' ')} · {entry.outcome}</b><small>{entry.actor} · {new Date(entry.created_at).toLocaleString()}</small>{entry.notes && <p>{entry.notes}</p>}<details><summary>Action details</summary><pre>{JSON.stringify(entry.details, null, 2)}</pre></details></span></div>)}{!actions.length && <p className="side-empty">No operator actions recorded.</p>}<div className="event-pagination"><button disabled={actionPageOffset === 0} onClick={() => setActionPageOffset(Math.max(0, actionPageOffset - 50))}>Newer actions</button><button disabled={actionPageOffset + actions.length >= totalActions} onClick={() => setActionPageOffset(actionPageOffset + 50)}>Older actions</button></div></div>
           </>}</section>
