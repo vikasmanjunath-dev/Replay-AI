@@ -4,6 +4,8 @@ RELAY AI is a local engineering workflow prototype that accepts a bug report and
 
 The current build includes a React/Vite dashboard and a FastAPI backend. Task snapshots, source files, events, and jobs are stored in SQLite. A lifespan-managed worker claims queued jobs with leases, recovers abandoned work, supports stage-boundary cancellation, and allows bounded manual retries. By default, approve/apply/commit operate on a durable task-owned repository copy. Operators can optionally configure local Git targets for an explicit, base-checked apply and separate commit.
 
+The implemented pipeline uses three model calls: triage; combined investigation and patch generation; and review. A deterministic sandbox runner executes tests, then a human operator decides whether to approve. The current status path is `QUEUED → RUNNING → TRIAGING → TRIAGED → INVESTIGATING → PATCHED → SANDBOX_RUNNING → SANDBOX_TESTED → REVIEWING → AWAITING_HUMAN_APPROVAL → APPROVED → APPLIED → COMMITTED`; terminal outcomes are `REJECTED`, `FAILED`, and `CANCELLED`. Stage labels and API states are distinct. The optional GitHub REST adapter reads configured repositories and opens a PR only for a human-approved, committed task after exact remote base/head SHA verification. The matching commit must already be published on the head branch; Relay does not push, merge, or deploy. An optional Switch connector posts outbound status and final review/test summaries after an owner provisions its agent and room.
+
 ## Run locally
 
 Requirements: Node.js, Python 3.11+, Git, and (for isolated code execution) Docker.
@@ -23,9 +25,10 @@ Run the backend suite from `relay-ai/` after activating its Python environment:
 python -m pytest tests -q
 ```
 
-Run the dashboard type check and production build from the repository root:
+Run the dashboard storage regression tests, type check, and production build from the repository root:
 
 ```bash
+npm test
 npm run lint
 npm run build
 ```
@@ -45,7 +48,12 @@ The dashboard uses `VITE_API_URL` when set. Development defaults to `http://loca
 - Gemini structured-output triage, patch generation, and review.
 - Patch check/application in a temporary workspace, followed by sandbox test execution.
 - Task list/detail review UI, scenario loading, diff/evidence display, and human approve/reject/apply/commit actions.
+- A seeded checkout scenario where a `$10` discount is subtracted twice from a `$100` cart. The expected baseline is one failing regression and one passing zero-discount test; the example fix makes both pass. See [`demo-store/README.md`](./demo-store/README.md).
+- Three repeatable rehearsal commands are available: `scripts/rehearse_checkout_fixture.sh`, `scripts/rehearse_checkout_fake.sh`, and `scripts/rehearse_checkout_gemini.sh`. The live rehearsal requires Gemini credentials and Docker isolation; it fails closed without either. Use `scripts/record_demo_backup.sh` to capture a local macOS backup recording; see [`demo-recordings/README.md`](./demo-recordings/README.md).
+- Optional Switch room notifications post status-only updates through the official agent message endpoint; they do not read room events or start tasks. See the [backend README](./relay-ai/README.md) and tracker for setup and live-verification status.
 - Optional local Git targets can be explicitly allow-listed, base-checked, applied to, and committed separately.
+- Optional GitHub routes are `GET /api/v1/github/repositories/{id}`, `GET /api/v1/github/repositories/{id}/contents?path=...`, and `POST /api/v1/tasks/{task_id}/pull-request`. Set `RELAY_GITHUB_TOKEN` and `RELAY_GITHUB_REPOSITORIES_JSON` only in the protected backend environment. Use a fine-grained token restricted to named repositories with Metadata read, Contents read, and Pull requests write permissions. The adapter validates approval evidence and exact base/head revisions before PR creation; it never pushes or merges.
+- The task review dashboard exposes this PR flow for committed repository tasks, loads the configured repository's default branch, prepares an editable title/description from task evidence, provides copy controls for the exact commit/base SHAs, and restores created PR links from the task audit. The operator must publish the verified commit to the head branch first.
 - Approval policy requiring a clean patch, passing tests, security `PASS`, and reviewer `APPROVE`.
 
 ## Current limits
@@ -58,3 +66,5 @@ The dashboard uses `VITE_API_URL` when set. Development defaults to `http://loca
 Before exposing a deployment beyond localhost, review [THREAT_MODEL.md](./THREAT_MODEL.md) for assets, trust boundaries, residual risks, provisional service objectives, and required ownership assignments.
 
 See [BLUEPRINT.md](./BLUEPRINT.md) for the target architecture, [TRACKER.md](./TRACKER.md) for live implementation status, and [OPERATIONS.md](./OPERATIONS.md) for backup, restore, health, and recovery procedures.
+
+Release verification steps and currently blocked host/owner actions are tracked in [`deploy/RELEASE_RUNBOOK.md`](./deploy/RELEASE_RUNBOOK.md) and [`deploy/RELEASE_BLOCKERS.json`](./deploy/RELEASE_BLOCKERS.json). Run `deploy/run_host_free_release_checks.sh` for local checks; run the target-host drill only after selecting a host and provisioning its protected environment.

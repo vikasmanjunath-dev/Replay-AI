@@ -44,14 +44,17 @@ flowchart LR
 - **Queue/worker:** execute triage, investigation, sandbox, and review; persist progress after each transition; support timeouts, cancellation, retries, and bounded concurrency.
 - **Provider adapter:** Gemini structured-output calls, model/config selection, redacted errors, retry/rate-limit handling, token/cost telemetry, and a deterministic fake provider for local development.
 - **Sandbox adapter:** validate a repository snapshot and patch, execute an allow-listed test command under resource/network limits, and capture bounded output and provenance. Production must not silently fall back to host subprocess execution.
-- **Repository adapter:** bind a task to an explicit repository/worktree and base revision; re-check the base before apply; apply only the reviewed patch; create a real commit only after a separate explicit action.
+- **Repository adapter:** bind a task to an explicit allow-listed local repository/worktree and base revision; re-check the base before apply; apply only the reviewed patch; create a real commit only after a separate explicit action. The optional GitHub REST adapter reads only configured repositories and opens a PR only after task approval and commit, after confirming the published head and base SHAs exactly match the task evidence. Branch publication is an explicit operator step. The adapter does not push, merge, or deploy.
+- **Chat status adapter:** optionally post minimal progress and final review/test status to a configured Switch room through the documented outbound agent message API; inbound room event handling is not implemented.
 - **Observability:** structured logs with task IDs, event history, health/readiness, metrics for queue latency, stage duration, failures, sandbox mode, and provider usage.
 
 ## Core task lifecycle
 
-`RECEIVED -> QUEUED -> TRIAGING -> INVESTIGATING -> PATCH_READY -> SANDBOX_RUNNING -> REVIEWING -> AWAITING_APPROVAL -> APPROVED -> APPLIED -> COMMITTED`
+Current API state path: `QUEUED -> RUNNING -> TRIAGING -> TRIAGED -> INVESTIGATING -> PATCHED -> SANDBOX_RUNNING -> SANDBOX_TESTED -> REVIEWING -> AWAITING_HUMAN_APPROVAL -> APPROVED -> APPLIED -> COMMITTED`.
 
-Terminal/side states: `REJECTED`, `FAILED`, `CANCELLED`, and `EXPIRED`. Each transition must be centralized, validated, timestamped, and recorded as an event. Approval requires a patch, completed sandbox evidence, and a reviewer result; policy should require passing tests and no `FAIL` security assessment by default. Rejection is terminal. Apply requires approval and a matching repository/base revision. Commit requires a successful apply and an explicit commit message or documented generated message. Repeated actions must be idempotent or return a clear conflict.
+Terminal outcomes: `REJECTED`, `FAILED`, and `CANCELLED`. `RECEIVED`, `INVESTIGATED`, and `REVIEWED` remain declared compatibility states but are not emitted by the main pipeline path. Each active transition is centralized, validated, timestamped, and recorded as an event. Approval requires a patch, passing sandbox evidence, security `PASS`, and reviewer `APPROVE`. Apply requires human approval and a matching allow-listed repository/base revision; commit is a separate human action. The current local repository adapter supports task-owned copies and optional local Git targets. The optional GitHub adapter reads allow-listed repository metadata/files and opens a pull request from an already-published branch only after task approval and commit; it compares exact base/head SHA values with task provenance. Branch publication remains an operator step. No push, merge, or deployment endpoint is implemented. PR creation is recorded as an operator action without changing the pipeline lifecycle state.
+
+The current pipeline has three model-backed calls: Stage A triage, Stage B investigation plus patch generation, and Stage C review. Sandbox tests run through a deterministic runner, and a human operator owns the approval decision. The orchestrator is workflow code, not a model specialist. An optional Switch room notifier posts outbound stage/status summaries; it does not consume inbound Switch events or start tasks from room messages.
 
 ## Main journeys
 
@@ -135,4 +138,4 @@ Secrets, raw credentials, and unnecessary source contents must not be copied int
 - Python FastAPI remains the first backend; React/Vite remains the web client.
 - Gemini remains the initial model provider behind an adapter boundary.
 - SQLite is suitable for an initial durable local deployment; production database/queue choices should be made before multi-instance deployment.
-- Applying changes to an external or arbitrary user repository is disabled until an explicit repository binding and authorization model exists.
+- Applying changes to an external or arbitrary user repository is disabled unless a clean local Git target is explicitly allow-listed and bound to the task's expected base revision. GitHub PR access is separately allow-listed by repository ID and token; the adapter never publishes commits or merges/deploys them.
