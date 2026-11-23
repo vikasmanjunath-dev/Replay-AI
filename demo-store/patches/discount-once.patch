@@ -1,0 +1,7 @@
+diff --git a/src/checkout.py b/src/checkout.py
+--- a/src/checkout.py
++++ b/src/checkout.py
+@@ -4,2 +4,2 @@
+-    total = subtotal - discount - discount
++    total = subtotal - discount
+     return total.quantize(Decimal("0.01"))
