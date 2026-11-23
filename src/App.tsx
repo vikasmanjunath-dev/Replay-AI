@@ -122,6 +122,8 @@ export default function App() {
   const [pullRequestTaskId, setPullRequestTaskId] = useState('');
   const [githubRepository, setGithubRepository] = useState<GitHubRepository | null>(null);
   const [githubRepositoryError, setGithubRepositoryError] = useState('');
+  const [githubBranches, setGithubBranches] = useState<string[]>([]);
+  const [githubBranchesError, setGithubBranchesError] = useState('');
 
   const resolvedTheme = themePreference === 'system' ? (systemDark ? 'dark' : 'light') : themePreference;
   useEffect(() => {
@@ -227,11 +229,12 @@ export default function App() {
   }, [task?.task_id, task?.status, refresh]);
   useEffect(() => {
     if (session.role !== 'operator' || !task?.is_committed || !task.repository_id) {
-      setGithubRepository(null); setGithubRepositoryError('');
+      setGithubRepository(null); setGithubRepositoryError(''); setGithubBranches([]); setGithubBranchesError('');
       return;
     }
     let active = true;
     setGithubRepository(null); setGithubRepositoryError('');
+    setGithubBranches([]); setGithubBranchesError('');
     void api<unknown>(`/api/v1/github/repositories/${encodeURIComponent(task.repository_id)}`)
       .then((repository) => {
         if (!active) return;
@@ -240,6 +243,9 @@ export default function App() {
         setPrBase(repository.default_branch);
       })
       .catch((reason) => { if (active) setGithubRepositoryError(describeRequestError(reason, 'GitHub repository is not available.')); });
+    void api<string[]>(`/api/v1/github/repositories/${encodeURIComponent(task.repository_id)}/branches`)
+      .then((branches) => { if (active) setGithubBranches(branches.filter((branch) => typeof branch === 'string')); })
+      .catch((reason) => { if (active) setGithubBranchesError(describeRequestError(reason, 'Could not load branch suggestions.')); });
     return () => { active = false; };
   }, [session.role, task?.task_id, task?.is_committed, task?.repository_id]);
   useEffect(() => {
@@ -413,10 +419,12 @@ export default function App() {
               <div className="divider">OPEN GITHUB PULL REQUEST</div>
               {githubRepository && <p className="target-help" role="status" aria-live="polite">Connected repository: <a href={githubRepository.html_url} target="_blank" rel="noreferrer">{githubRepository.full_name}</a></p>}
               {githubRepositoryError && <p className="target-help" role="alert">{githubRepositoryError} Check that this repository is in the backend GitHub allow-list.</p>}
+              {githubBranchesError && <p className="target-help" role="status">Branch suggestions are unavailable; you can still enter branch names.</p>}
               <p className="target-help">Publish the task commit to the head branch first. Its base must match this task’s recorded base revision; Relay checks both exact SHAs before opening the PR.</p>
               {task.repository_base_revision && <div className="revision-row"><span><small>EXPECTED BASE</small><code>{task.repository_base_revision}</code></span><button className="copy-revision" onClick={() => void copyRevision('Base SHA', task.repository_base_revision!)}>Copy base SHA</button></div>}
-              <label className="field-label" htmlFor="pr-head">PUBLISHED HEAD BRANCH</label><input id="pr-head" className="action-input" maxLength={240} value={prHead} onChange={(event) => { setPrHead(event.target.value); removeStorage('session', `relay-action-key:${task.task_id}:open_pull_request`); }} placeholder="feature/fix-checkout"/>
-              <label className="field-label" htmlFor="pr-base">BASE BRANCH</label><input id="pr-base" className="action-input" maxLength={240} value={prBase} onChange={(event) => { setPrBase(event.target.value); removeStorage('session', `relay-action-key:${task.task_id}:open_pull_request`); }} placeholder="main"/>
+              <datalist id="github-branches">{githubBranches.map((branch) => <option key={branch} value={branch}/>)}</datalist>
+              <label className="field-label" htmlFor="pr-head">PUBLISHED HEAD BRANCH</label><input id="pr-head" list="github-branches" className="action-input" maxLength={240} value={prHead} onChange={(event) => { setPrHead(event.target.value); removeStorage('session', `relay-action-key:${task.task_id}:open_pull_request`); }} placeholder="feature/fix-checkout"/>
+              <label className="field-label" htmlFor="pr-base">BASE BRANCH</label><input id="pr-base" list="github-branches" className="action-input" maxLength={240} value={prBase} onChange={(event) => { setPrBase(event.target.value); removeStorage('session', `relay-action-key:${task.task_id}:open_pull_request`); }} placeholder="main"/>
               <label className="field-label" htmlFor="pr-title">TITLE</label><input id="pr-title" className="action-input" maxLength={200} value={prTitle} onChange={(event) => { setPrTitle(event.target.value); removeStorage('session', `relay-action-key:${task.task_id}:open_pull_request`); }} placeholder={task.triage?.title || 'Fix'} />
               <label className="field-label" htmlFor="pr-body">DESCRIPTION · OPTIONAL</label><textarea id="pr-body" className="action-input" maxLength={20000} value={prBody} onChange={(event) => { setPrBody(event.target.value); removeStorage('session', `relay-action-key:${task.task_id}:open_pull_request`); }} placeholder="Summarize the fix and verification." />
               <label className="pr-draft"><input type="checkbox" checked={prDraft} onChange={(event) => { setPrDraft(event.target.checked); removeStorage('session', `relay-action-key:${task.task_id}:open_pull_request`); }}/> Create as draft</label>
