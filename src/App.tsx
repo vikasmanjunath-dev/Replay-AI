@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Activity, ArrowRight, Check, CircleAlert, FileArchive, LoaderCircle, Monitor, Moon, Save, ShieldCheck, Sun, Trash2, UploadCloud, X } from 'lucide-react';
+import { AbortableRequests } from './abortableRequests.js';
+import { readStorage, removeStorage, writeStorage } from './safeStorage.js';
 
 type TimelineEvent = { timestamp: string; stage: string; status: string; actor?: string; correlation_id?: string | null; details: Record<string, unknown> };
 type Task = {
@@ -40,7 +42,7 @@ const API = (import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http:
 
 async function api<T>(path: string, init?: RequestInit, onResponse?: (response: Response) => void): Promise<T> {
   const headers = new Headers(init?.headers);
-  const token = window.sessionStorage.getItem('relay-api-token');
+  const token = readStorage('session', 'relay-api-token');
   if (token) headers.set('Authorization', `Bearer ${token}`);
   const response = await fetch(`${API}${path}`, { ...init, headers });
   if (!response.ok) {
@@ -56,7 +58,7 @@ async function api<T>(path: string, init?: RequestInit, onResponse?: (response: 
 
 export default function App() {
   const [themePreference, setThemePreference] = useState<ThemePreference>(() => {
-    const saved = window.localStorage.getItem('relay-theme');
+    const saved = readStorage('local', 'relay-theme');
     return saved === 'light' || saved === 'dark' ? saved : 'system';
   });
   const [systemDark, setSystemDark] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches);
@@ -72,11 +74,12 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
-  const [apiToken, setApiToken] = useState(() => window.sessionStorage.getItem('relay-api-token') || '');
+  const [apiToken, setApiToken] = useState(() => readStorage('session', 'relay-api-token') || '');
   const [tokenRevision, setTokenRevision] = useState(0);
   const [readiness, setReadiness] = useState<Readiness>({ status: 'checking' });
   const [readinessChecking, setReadinessChecking] = useState(false);
   const readinessCheckInFlight = useRef(false);
+  const [refreshRequests] = useState(() => new AbortableRequests());
   const [taskSearch, setTaskSearch] = useState('');
   const [taskStatus, setTaskStatus] = useState('');
   const [taskPageOffset, setTaskPageOffset] = useState(0);
@@ -102,8 +105,8 @@ export default function App() {
   useLayoutEffect(() => {
     document.documentElement.dataset.theme = resolvedTheme;
     document.querySelector('meta[name="theme-color"]')?.setAttribute('content', resolvedTheme === 'dark' ? '#0b0b0d' : '#f5f5f7');
-    if (themePreference === 'system') window.localStorage.removeItem('relay-theme');
-    else window.localStorage.setItem('relay-theme', themePreference);
+    if (themePreference === 'system') removeStorage('local', 'relay-theme');
+    else writeStorage('local', 'relay-theme', themePreference);
   }, [resolvedTheme, themePreference]);
 
   function cycleTheme() {
@@ -111,28 +114,42 @@ export default function App() {
   }
 
   const refresh = useCallback(async () => {
+    const requests = refreshRequests;
+    const controller = requests.start();
     try {
       const params = new URLSearchParams({ limit: '50', offset: String(taskPageOffset) });
       if (taskSearch.trim()) params.set('q', taskSearch.trim());
       if (taskStatus) params.set('status', taskStatus);
       const selectedId = task?.task_id;
+      let nextTotalTasks = 0;
+      let nextTotalActions = 0;
+      let nextTotalEvents = 0;
       const [list, demos, selectedDetail, selectedActions, selectedEvents, currentSession] = await Promise.all([
-        api<Task[]>(`/api/v1/tasks?${params}`, undefined, (response) => setTotalTasks(Number(response.headers.get('X-Total-Count') || 0))),
-        api<Scenario[]>('/api/v1/scenarios'),
-        selectedId ? api<Task>(`/api/v1/tasks/${selectedId}`).catch(() => null) : Promise.resolve(null),
-        selectedId ? api<ActionAudit[]>(`/api/v1/tasks/${selectedId}/actions?limit=50&offset=${actionPageOffset}`, undefined, (response) => setTotalActions(Number(response.headers.get('X-Total-Count') || 0))).catch(() => { setTotalActions(0); return []; }) : Promise.resolve([]),
-        selectedId ? api<TimelineEvent[]>(`/api/v1/tasks/${selectedId}/events?limit=50&offset=${eventPageOffset}`, undefined, (response) => setTotalEvents(Number(response.headers.get('X-Total-Count') || 0))).catch(() => { setTotalEvents(0); return []; }) : Promise.resolve([]),
-        api<Session>('/api/v1/session'),
+        api<Task[]>(`/api/v1/tasks?${params}`, { signal: controller.signal }, (response) => { nextTotalTasks = Number(response.headers.get('X-Total-Count') || 0); }),
+        api<Scenario[]>('/api/v1/scenarios', { signal: controller.signal }),
+        selectedId ? api<Task>(`/api/v1/tasks/${selectedId}`, { signal: controller.signal }).catch(() => null) : Promise.resolve(null),
+        selectedId ? api<ActionAudit[]>(`/api/v1/tasks/${selectedId}/actions?limit=50&offset=${actionPageOffset}`, { signal: controller.signal }, (response) => { nextTotalActions = Number(response.headers.get('X-Total-Count') || 0); }).catch(() => []) : Promise.resolve([]),
+        selectedId ? api<TimelineEvent[]>(`/api/v1/tasks/${selectedId}/events?limit=50&offset=${eventPageOffset}`, { signal: controller.signal }, (response) => { nextTotalEvents = Number(response.headers.get('X-Total-Count') || 0); }).catch(() => []) : Promise.resolve([]),
+        api<Session>('/api/v1/session', { signal: controller.signal }),
       ]);
+      if (!requests.isCurrent(controller)) return;
       setTasks(list); setScenarios(demos);
       setSession(currentSession);
+      setTotalTasks(nextTotalTasks); setTotalActions(nextTotalActions); setTotalEvents(nextTotalEvents);
       setActions(selectedActions);
       setEvents(selectedEvents);
       setTask((current) => current ? (list.find((item) => item.task_id === current.task_id) || selectedDetail || current) : current);
       setError('');
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not reach the API.'); }
+    } catch (reason) {
+      if (requests.isCurrent(controller)) {
+        setError(reason instanceof Error ? reason.message : 'Could not reach the API.');
+      }
+    } finally {
+      requests.finish(controller);
+    }
   }, [taskSearch, taskStatus, taskPageOffset, task?.task_id, eventPageOffset, actionPageOffset]);
   useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => () => refreshRequests.cancel(), [refreshRequests]);
   const checkReadiness = useCallback(async () => {
     if (readinessCheckInFlight.current) return;
     readinessCheckInFlight.current = true;
@@ -201,13 +218,13 @@ export default function App() {
     if (!task) return;
     setBusy(true); setError('');
     const keySlot = `relay-action-key:${task.task_id}:${action}`;
-    const idempotencyKey = window.sessionStorage.getItem(keySlot) || crypto.randomUUID();
-    window.sessionStorage.setItem(keySlot, idempotencyKey);
+    const idempotencyKey = readStorage('session', keySlot) || crypto.randomUUID();
+    writeStorage('session', keySlot, idempotencyKey);
     try {
       const effectiveCommitMessage = task.repository_operation_state === 'COMMITTING' ? task.commit_message?.trim() || '' : commitMessage.trim();
       const payload = { action, ...(['approve', 'reject'].includes(action) && reviewNotes.trim() ? { notes: reviewNotes.trim() } : {}), ...(action === 'commit' && effectiveCommitMessage ? { commit_message: effectiveCommitMessage } : {}) };
       const updated = await api<Task>(`/api/v1/tasks/${task.task_id}/actions`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(payload) });
-      window.sessionStorage.removeItem(keySlot);
+      removeStorage('session', keySlot);
       setTask(updated);
       setMessage(({ approve: 'Patch approved.', reject: 'Patch rejected.', apply: updated.repository_id ? `Patch applied to ${updated.repository_id}.` : 'Patch applied to its task workspace.', commit: `Created Git commit ${updated.commit_hash || ''}.`, cancel: 'Cancellation requested.', retry: 'Task queued for retry.' })[action]);
       await refresh();
@@ -229,12 +246,24 @@ export default function App() {
   }
 
   function loadScenario(item: Scenario) { setReport(item.bug_report); setSnapshot(JSON.stringify(item.codebase, null, 2)); setArchive(null); setInputMode('map'); setRepositoryId(''); setMessage(`${item.name} loaded.`); }
-  function saveToken() { if (apiToken.trim()) window.sessionStorage.setItem('relay-api-token', apiToken.trim()); else window.sessionStorage.removeItem('relay-api-token'); setTokenRevision((revision) => revision + 1); void refresh(); }
+  function saveToken() {
+    if (apiToken.trim()) {
+      const persistent = writeStorage('session', 'relay-api-token', apiToken.trim());
+      setMessage(persistent
+        ? 'API token saved for this tab session.'
+        : 'Browser storage is blocked; the token will remain available only until this page reloads or closes.');
+    } else {
+      removeStorage('session', 'relay-api-token');
+      setMessage('API token removed from this tab session.');
+    }
+    setTokenRevision((revision) => revision + 1);
+    void refresh();
+  }
   async function downloadPatch() {
     if (!task?.investigation_patch) return;
     try {
       const headers = new Headers();
-      const token = window.sessionStorage.getItem('relay-api-token');
+      const token = readStorage('session', 'relay-api-token');
       if (token) headers.set('Authorization', `Bearer ${token}`);
       const response = await fetch(`${API}/api/v1/tasks/${task.task_id}/patch`, { headers });
       if (!response.ok) throw new Error(`Patch download failed (${response.status})`);
@@ -281,11 +310,11 @@ export default function App() {
             {task.investigation_patch && <div className="result-section"><small className="kicker">ROOT CAUSE · {Math.round(task.investigation_patch.confidence_score * 100)}% CONFIDENCE</small><p>{task.investigation_patch.root_cause}</p><b>Changed files</b><div className="file-tags">{task.investigation_patch.files_changed.map((file) => <code key={file}>{file}</code>)}</div><details><summary>View unified diff</summary><pre>{task.investigation_patch.unified_diff}</pre></details><button className="patch-download" onClick={() => void downloadPatch()}>Download patch file</button></div>}
             {task.sandbox_result && <div className="evidence"><div><b><Activity size={15}/> Sandbox execution</b><span className={task.sandbox_result.tests_passed ? 'pass' : 'fail'}>{task.sandbox_result.tests_passed ? 'TESTS PASSED' : 'TESTS FAILED'}</span></div><small>Exit {task.sandbox_result.exit_code} · {task.sandbox_result.isolation_mode} · Patch {task.sandbox_result.applied_patch_cleanly ? 'applied' : 'rejected'}</small><code className="test-command">{task.sandbox_result.test_command}</code><details><summary>Execution output</summary>{task.sandbox_result.stdout && <section><b>stdout</b><pre>{task.sandbox_result.stdout}</pre></section>}{task.sandbox_result.stderr && <section><b>stderr</b><pre>{task.sandbox_result.stderr}</pre></section>}{!task.sandbox_result.stdout && !task.sandbox_result.stderr && <p>No output captured.</p>}</details></div>}
             {task.reviewer && <div className="review"><b><ShieldCheck size={16}/> AI reviewer <span>{task.reviewer.security_assessment} · {task.reviewer.recommendation}</span></b><p>{task.reviewer.review_summary}</p>{task.reviewer.regression_risks.map((risk, i) => <div className="criterion risk" key={i}><CircleAlert size={14}/>{risk}</div>)}</div>}
-            {session.role === 'operator' && task.status === 'AWAITING_HUMAN_APPROVAL' && <><label className="field-label" htmlFor="review-notes">REVIEW NOTES · OPTIONAL</label><textarea id="review-notes" className="action-input" maxLength={2000} value={reviewNotes} onChange={(e) => { setReviewNotes(e.target.value); window.sessionStorage.removeItem(`relay-action-key:${task.task_id}:approve`); window.sessionStorage.removeItem(`relay-action-key:${task.task_id}:reject`); }} placeholder="Record the reason for your decision."/><div className="decisions"><button disabled={busy} onClick={() => void act('reject')}><X size={15}/> Reject</button><button disabled={busy} onClick={() => void act('approve')}><Check size={15}/> Approve patch</button></div></>}
+            {session.role === 'operator' && task.status === 'AWAITING_HUMAN_APPROVAL' && <><label className="field-label" htmlFor="review-notes">REVIEW NOTES · OPTIONAL</label><textarea id="review-notes" className="action-input" maxLength={2000} value={reviewNotes} onChange={(e) => { setReviewNotes(e.target.value); removeStorage('session', `relay-action-key:${task.task_id}:approve`); removeStorage('session', `relay-action-key:${task.task_id}:reject`); }} placeholder="Record the reason for your decision."/><div className="decisions"><button disabled={busy} onClick={() => void act('reject')}><X size={15}/> Reject</button><button disabled={busy} onClick={() => void act('approve')}><Check size={15}/> Approve patch</button></div></>}
             {session.role === 'operator' && !['AWAITING_HUMAN_APPROVAL', 'APPROVED', 'APPLIED', 'COMMITTED', 'REJECTED', 'CANCELLED', 'FAILED'].includes(task.status) && <div className="decisions"><button disabled={busy} onClick={() => void act('cancel')}><X size={15}/> Cancel task</button></div>}
             {session.role === 'operator' && task.status === 'FAILED' && <div className="decisions"><button disabled={busy} onClick={() => void act('retry')}>Retry task</button></div>}
             {session.role === 'operator' && task.is_approved && !task.is_applied && <div className="decisions"><button disabled={busy} onClick={() => void act('apply')}><Check size={15}/> Apply to {task.repository_id || 'task workspace'}</button></div>}
-            {session.role === 'operator' && task.is_applied && !task.is_committed && <><label className="field-label" htmlFor="commit-message">COMMIT MESSAGE · OPTIONAL</label><input id="commit-message" className="action-input" maxLength={200} readOnly={task.repository_operation_state === 'COMMITTING'} value={task.repository_operation_state === 'COMMITTING' ? task.commit_message || '' : commitMessage} onChange={(e) => { setCommitMessage(e.target.value); window.sessionStorage.removeItem(`relay-action-key:${task.task_id}:commit`); }} placeholder="Uses a generated message when blank."/>{task.repository_operation_state === 'COMMITTING' && <small className="target-help">Resuming the pending commit with its recorded message.</small>}<div className="decisions"><span className="pending">Patch applied to {task.repository_id || 'isolated task copy'}.</span><button disabled={busy} onClick={() => void act('commit')}><Check size={15}/>{task.repository_operation_state === 'COMMITTING' ? 'Resume commit' : 'Commit'}</button></div></>}
+            {session.role === 'operator' && task.is_applied && !task.is_committed && <><label className="field-label" htmlFor="commit-message">COMMIT MESSAGE · OPTIONAL</label><input id="commit-message" className="action-input" maxLength={200} readOnly={task.repository_operation_state === 'COMMITTING'} value={task.repository_operation_state === 'COMMITTING' ? task.commit_message || '' : commitMessage} onChange={(e) => { setCommitMessage(e.target.value); removeStorage('session', `relay-action-key:${task.task_id}:commit`); }} placeholder="Uses a generated message when blank."/>{task.repository_operation_state === 'COMMITTING' && <small className="target-help">Resuming the pending commit with its recorded message.</small>}<div className="decisions"><span className="pending">Patch applied to {task.repository_id || 'isolated task copy'}.</span><button disabled={busy} onClick={() => void act('commit')}><Check size={15}/>{task.repository_operation_state === 'COMMITTING' ? 'Resume commit' : 'Commit'}</button></div></>}
             {task.is_committed && task.commit_hash && <div className="commit-record"><b>Commit {task.commit_hash.slice(0, 12)}</b><code>{task.commit_message}</code></div>}
             {task.is_committed && <div className="pending">Committed to {task.repository_id || 'task copy'} · {task.commit_hash}</div>}
             <div className="timeline"><small className="kicker">ACTIVITY · {totalEvents ? `${Math.max(1, totalEvents - eventPageOffset - events.length + 1)}–${totalEvents - eventPageOffset} OF ${totalEvents} EVENTS` : '0 EVENTS'}</small>{events.map((event, i) => <div key={`${event.timestamp}-${event.stage}-${i}`}><i/><span><b>{event.stage.replaceAll('_', ' ')}</b><small>{event.status} · {event.actor || 'system'} · {new Date(event.timestamp).toLocaleString()}</small>{event.stage === 'MODEL_USAGE' && <div className="model-usage"><small>{String(event.details.provider || 'provider')} · {String(event.details.model || 'unknown model')}</small><small>{String(event.details.prompt_tokens ?? 0)} prompt · {String(event.details.candidate_tokens ?? 0)} generated · {String(event.details.total_tokens ?? 0)} total tokens</small>{event.details.estimated_cost_usd != null && <small>Estimated ${String(event.details.estimated_cost_usd)} · {String(event.details.pricing_label || 'operator pricing')}</small>}</div>}</span></div>)}{!events.length && <p className="side-empty">No activity events on this page.</p>}<div className="event-pagination"><button disabled={eventPageOffset === 0} onClick={() => setEventPageOffset(Math.max(0, eventPageOffset - 50))}>Newer events</button><button disabled={eventPageOffset + events.length >= totalEvents} onClick={() => setEventPageOffset(eventPageOffset + 50)}>Older events</button></div></div>

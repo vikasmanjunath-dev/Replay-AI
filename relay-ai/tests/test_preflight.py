@@ -67,6 +67,38 @@ def test_preflight_rejects_frontend_assets_resolving_outside_dist(tmp_path):
     assert "assets are missing" in check["message"]
 
 
+def test_preflight_rejects_app_mark_symlink_resolving_outside_dist(tmp_path):
+    from preflight import _check_frontend
+
+    dist = tmp_path / "dist"
+    (dist / "assets").mkdir(parents=True)
+    (dist / "assets" / "app.js").write_text("// app")
+    (dist / "index.html").write_text('<script src="/assets/app.js"></script>')
+    outside_mark = tmp_path / "outside.svg"
+    outside_mark.write_text("<svg />")
+    (dist / "relay-mark.svg").symlink_to(outside_mark)
+
+    check = _check_frontend(tmp_path)
+
+    assert check["status"] == "FAIL"
+    assert "assets are missing" in check["message"]
+
+
+def test_preflight_rejects_index_symlink_resolving_outside_dist(tmp_path):
+    from preflight import _check_frontend
+
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    outside_index = tmp_path / "outside.html"
+    outside_index.write_text('<script src="/assets/app.js"></script>')
+    (dist / "index.html").symlink_to(outside_index)
+
+    check = _check_frontend(tmp_path)
+
+    assert check["status"] == "FAIL"
+    assert "assets are missing" in check["message"]
+
+
 def test_shared_token_does_not_mask_invalid_user_or_role_configuration():
     from preflight import _auth_is_configured
 

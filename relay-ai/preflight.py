@@ -114,19 +114,24 @@ def _auth_is_configured(env: Mapping[str, str]) -> tuple[bool, str]:
 def _check_frontend(root: Path) -> dict[str, str]:
     dist_root = root / "dist"
     index = dist_root / "index.html"
-    if not index.is_file():
+    dist_resolved = dist_root.resolve()
+    index_resolved = index.resolve()
+    if not index_resolved.is_relative_to(dist_resolved):
+        return _result("frontend-build", "FAIL", "One or more bundled frontend assets are missing.")
+    if not index_resolved.is_file():
         return _result("frontend-build", "ACTION REQUIRED", "Run npm run build to create dist/index.html.")
     parser = _AssetParser()
     try:
-        parser.feed(index.read_text(encoding="utf-8"))
+        parser.feed(index_resolved.read_text(encoding="utf-8"))
     except (OSError, UnicodeError):
         return _result("frontend-build", "FAIL", "The generated index.html could not be read.")
-    dist_resolved = dist_root.resolve()
     asset_paths = [(dist_root / asset.lstrip("/")).resolve() for asset in parser.assets]
+    app_mark = (dist_root / "relay-mark.svg").resolve()
     if (
         not asset_paths
         or any(not path.is_relative_to(dist_resolved) or not path.is_file() for path in asset_paths)
-        or not (dist_root / "relay-mark.svg").is_file()
+        or not app_mark.is_relative_to(dist_resolved)
+        or not app_mark.is_file()
     ):
         return _result("frontend-build", "FAIL", "One or more bundled frontend assets are missing.")
     return _result("frontend-build", "PASS", f"Built entry point, {len(parser.assets)} bundled asset(s), and app mark are present.")
