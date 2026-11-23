@@ -42,7 +42,7 @@ Last updated: 2026-11-23 (Asia/Kolkata)
 | CMT-05 | Commit GitHub adapter and documentation | DONE | Adapter completed as `f77bf41`; integration/release docs completed as `a80c33a`. |
 | CMT-06 | Commit release readiness pack | DONE | Completed as `3a7393f` (`feat: prepare host-free release readiness drills`). |
 | CMT-07 | Commit dashboard PR and accessibility improvements | DONE | Completed as `326221f` (`feat: improve dashboard review and recovery flows`). |
-| CMT-08 | Push feature chunks to origin/main | IN PROGRESS | User explicitly authorized pushing the current `main` branch to its configured `origin/main` remote. Eight previously committed changes plus the new branch-suggestion commits are queued for the push. |
+| CMT-08 | Push feature chunks to origin/main | BLOCKED | Automatic approval review rejected `git push origin main`: it requires explicit authorization naming the destination and payload because this exports potentially nonpublic contents to an unverified GitHub remote and updates the shared default branch. Eleven commits are ahead of `origin/main`; obtain that specific authorization before retrying. |
 
 | ID | Task | Status | Evidence / next step |
 |---|---|---|---|
@@ -100,9 +100,9 @@ Last updated: 2026-11-23 (Asia/Kolkata)
 - Added an operator-only, allow-listed branch-list API backed by GitHub's List branches endpoint. Responses are capped to one 100-branch page and branch names/full commit SHAs are validated; the dashboard exposes names as suggestions while preserving free-text entry.
 - Updated GitHub API documentation and token permission notes. No live GitHub call was made.
 
-### 2026-11-23 — Record feature commits and push authorization
-- Updated CMT-03 through CMT-07 to DONE with commit references for Switch, GitHub, release readiness, pitch, and dashboard chunks. The earlier push review rejection is superseded by the user's explicit authorization in this session to push `main` to `origin/main`.
-- Added separate backend and dashboard commits for validated GitHub branch suggestions. `.codex-presentation-build/` remains untracked and excluded.
+### 2026-11-23 — Record feature commits and push review block
+- Updated CMT-03 through CMT-07 to DONE with commit references for Switch, GitHub, release readiness, pitch, and dashboard chunks. Recorded the automatic approval review's rejection of `git push origin main`, which cited exporting potentially nonpublic repository contents to an unverified remote and updating the shared default branch.
+- Added separate backend and dashboard commits for validated GitHub branch suggestions. Eleven local commits remain ahead of `origin/main`; `.codex-presentation-build/` remains untracked and excluded.
 
 ### 2026-11-22 — Add dashboard controls for verified GitHub PR creation
 - Added an operator-only PR form for committed repository tasks. It loads and validates allow-listed repository metadata/default branch, prefills an editable title and description from task evidence once commit evidence is ready, collects the already-published head branch and draft preference, shows the expected base revision with copy controls for the exact commit/base SHAs, explains the SHA verification requirement, sends an idempotent request to the guarded API, and displays the returned GitHub link. The link is recovered from action audit history after reload, and external URLs are constrained to `https://github.com`. A non-allow-listed local repository gets an inline configuration hint. Updated the root README to describe the dashboard flow.
