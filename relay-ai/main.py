@@ -415,6 +415,20 @@ def read_github_repository(repository_id: str, request: Request):
         adapter.close()
 
 
+@app.get("/api/v1/github/repositories/{repository_id}/branches")
+def read_github_repository_branches(repository_id: str, request: Request):
+    """List bounded branch names for operator form suggestions."""
+    if request.state.role != "operator":
+        raise HTTPException(status_code=403, detail="Operator access is required.")
+    adapter = _github_adapter()
+    try:
+        return adapter.get_branches(repository_id)
+    except GitHubAdapterError as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error
+    finally:
+        adapter.close()
+
+
 @app.get("/api/v1/github/repositories/{repository_id}/contents")
 def read_github_repository_content(repository_id: str, path: str, request: Request, ref: str | None = None):
     """Read one bounded UTF-8 file from an operator-allow-listed repository."""
