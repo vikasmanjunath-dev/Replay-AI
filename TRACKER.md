@@ -1,6 +1,6 @@
 # RELAY AI Build Tracker
 
-Last updated: 2026-11-10 (Asia/Kolkata)
+Last updated: 2026-11-23 (Asia/Kolkata)
 
 ## Status key
 
@@ -23,7 +23,7 @@ Last updated: 2026-11-10 (Asia/Kolkata)
 | P-B1 | Add a replaceable Switch chat connector based on official docs | DONE | Optional outbound Switch notifier uses the documented agent message endpoint; posts content-minimal progress and final test/security/reviewer summary. Failed sends are not cached as delivered; URL/key bounds, port and whitespace/control checks fail closed; config representations omit the API key. Successful progress/final deduplication uses a bounded cache; delivery failures produce a safe task-ID warning. The mocked protocol/configuration suite currently passes 20 tests. No SDK is claimed and no inbound message subscription is implemented. |
 | P-B1-LIVE | Verify delivery to a provisioned Switch room | BLOCKED | Exact ask: have the Switch agent owner provision an agent API key and provide the approved Switch bridge base URL, agent ID, and room ID through the protected service environment. The credential is not needed in chat. |
 | P-B2 | Add a least-privilege GitHub read/PR adapter | DONE | Added operator-only allow-listed metadata/file reads, exact remote base/head comparison, approved-task PR creation, idempotency and audit. File paths and optional content refs are bounded/validated before network access; invalid branch input returns 400. Allow-list parsing rejects duplicate IDs; PR responses require a positive integer number and `open`/`closed` state. Viewer access is denied before adapter configuration is loaded. Fine-grained permissions documented. Branch must already be published; no push, merge, or deploy. Latest full backend suite: 128 passed/3 skipped. |
-| P-B2-UI | Expose the guarded GitHub PR flow in task review | DONE | Operators can enter the already-published head branch and draft preference; the UI validates configured repository metadata/default branch before prefilling bounded, editable PR title/body from task evidence, announces connection/errors accessibly, offers copy buttons for exact commit/base SHAs, submits idempotently, and displays the returned PR link from the response or audit history. `npm run lint` and `npm run build` pass. |
+| P-B2-UI | Expose the guarded GitHub PR flow in task review | DONE | Operators can select from up to 100 validated branch suggestions or enter a name; the UI validates configured repository metadata/default branch before prefilling bounded, editable PR title/body from task evidence, announces connection/errors accessibly, offers copy buttons for exact commit/base SHAs, submits idempotently, and displays the returned PR link from the response or audit history. `npm run lint`, `npm run build`, and Python compilation pass. |
 | P-B2-LIVE | Verify read and PR creation against GitHub | BLOCKED | Exact ask: configure `RELAY_GITHUB_TOKEN` in the protected backend environment with access limited to the selected test repository and `RELAY_GITHUB_REPOSITORIES_JSON`; provide a published test branch whose head SHA equals a passing, approved task commit and an unchanged expected base SHA. No credentials belong in chat. |
 | P-B3 | Align pitch claims with implemented lifecycle states and actual agent count | DONE | Final 14-slide deck: `deliverables/RELAY_AI_Hackathon_Pitch_Deck_Aligned_v3.pptx`. Slide 7 and notes describe the optional GitHub adapter, existing published branch requirement, exact SHA check, human approval, and no push/merge/deploy. All 14 slides rendered; changed architecture slide visually inspected; package/layout/import validation passes with zero layout warnings. Regression test checks deck text/notes. |
 | P-C1 | Prepare deployment-host and owner release drills | DONE | Added `deploy/RELEASE_RUNBOOK.md`, a nine-item `deploy/RELEASE_BLOCKERS.json` matrix, host-free and target-host scripts, and mocked target-smoke/checklist tests. Ran the host-free suite successfully. No target was accessed or modified. |
@@ -37,10 +37,12 @@ Last updated: 2026-11-10 (Asia/Kolkata)
 | P-D8 | Exercise local queue claims under concurrent worker load | DONE | Expanded the temporary-SQLite drill to 64 queued jobs drained by 16 concurrent store instances. Three consecutive fresh-database runs passed (1 test each, 0.41s/0.43s/0.37s). Every job was claimed once at attempt 1, claim events preceded ingestion events, and no jobs remained. This is a short local correctness burst, not sustained throughput or target-host capacity. |
 | CMT-01 | Commit the verified dashboard reliability increment | DONE | Explicit user authorization received for the reliability-only commit on `main`; committed as `87f4930` (`fix: harden dashboard state and preflight boundaries`). No push performed. |
 | CMT-02 | Commit the seeded demo and rehearsal increment | DONE | User approved the exact commit on `main`, based on `87f4930`; committed as `fc0070b` (`feat: add repeatable seeded checkout demo`). No push performed. |
-| CMT-03 | Commit the Switch adapter increment | BLOCKED | Exact staged proposal is 3 files (`relay-ai/switch_room.py`, its tests, and worker integration), 291 insertions/1 deletion, based on `fc0070b`; approval request is pending. Failed-delivery retry/observability, bounded response/config validation, related tests, and README clarification are unstaged follow-up changes and are not in that exact staged snapshot. No push performed. |
-| CMT-04 | Commit pitch and lifecycle claim alignment | BLOCKED | Deck and documentation changes are complete and verified in the working tree. Exact ask: explicitly authorize a local commit on `main` (or select an approved feature branch and expected base revision). No push performed. |
-| CMT-05 | Commit GitHub adapter and documentation | BLOCKED | Implementation and verification are complete in the working tree. Exact ask: explicitly authorize a local commit on `main` (or select an approved feature branch and expected base revision). No push performed. |
-| CMT-06 | Commit release readiness pack | BLOCKED | Host-free runbook, scripts, blocker matrix, and tests are complete. Exact ask: explicitly authorize a local commit on `main` (or select an approved feature branch and expected base revision). No push performed. |
+| CMT-03 | Commit the Switch adapter increment | DONE | Completed as `ac6a50a` (`feat: add Switch room status notifications`), including the hardening follow-up and worker integration. |
+| CMT-04 | Commit pitch and lifecycle claim alignment | DONE | Completed as `39959e5` (`docs: align pitch deck with implemented workflow`); deck and claim regression are committed. |
+| CMT-05 | Commit GitHub adapter and documentation | DONE | Adapter completed as `f77bf41`; integration/release docs completed as `a80c33a`. |
+| CMT-06 | Commit release readiness pack | DONE | Completed as `3a7393f` (`feat: prepare host-free release readiness drills`). |
+| CMT-07 | Commit dashboard PR and accessibility improvements | DONE | Completed as `326221f` (`feat: improve dashboard review and recovery flows`). |
+| CMT-08 | Push feature chunks to origin/main | IN PROGRESS | User explicitly authorized pushing the current `main` branch to its configured `origin/main` remote. Eight previously committed changes plus the new branch-suggestion commits are queued for the push. |
 
 | ID | Task | Status | Evidence / next step |
 |---|---|---|---|
@@ -93,6 +95,14 @@ Last updated: 2026-11-10 (Asia/Kolkata)
 | P5-02 | Handle restricted browser storage gracefully | DONE | Dashboard reads/writes/removals for theme, API token, and action idempotency keys are guarded against storage access exceptions. Theme falls back to system mode; session values use an in-memory fallback for the current page, and token-save feedback explains whether the browser persisted the value or it is memory-only. Node built-in regression tests cover allowed, denied, quota, and stale-removal cases and run in CI. |
 
 ## Update log
+
+### 2026-11-23 — Add GitHub branch suggestions to PR creation
+- Added an operator-only, allow-listed branch-list API backed by GitHub's List branches endpoint. Responses are capped to one 100-branch page and branch names/full commit SHAs are validated; the dashboard exposes names as suggestions while preserving free-text entry.
+- Updated GitHub API documentation and token permission notes. No live GitHub call was made.
+
+### 2026-11-23 — Record feature commits and push authorization
+- Updated CMT-03 through CMT-07 to DONE with commit references for Switch, GitHub, release readiness, pitch, and dashboard chunks. The earlier push review rejection is superseded by the user's explicit authorization in this session to push `main` to `origin/main`.
+- Added separate backend and dashboard commits for validated GitHub branch suggestions. `.codex-presentation-build/` remains untracked and excluded.
 
 ### 2026-11-22 — Add dashboard controls for verified GitHub PR creation
 - Added an operator-only PR form for committed repository tasks. It loads and validates allow-listed repository metadata/default branch, prefills an editable title and description from task evidence once commit evidence is ready, collects the already-published head branch and draft preference, shows the expected base revision with copy controls for the exact commit/base SHAs, explains the SHA verification requirement, sends an idempotent request to the guarded API, and displays the returned GitHub link. The link is recovered from action audit history after reload, and external URLs are constrained to `https://github.com`. A non-allow-listed local repository gets an inline configuration hint. Updated the root README to describe the dashboard flow.
