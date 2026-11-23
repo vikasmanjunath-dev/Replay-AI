@@ -1,0 +1,23 @@
+{
+  "include": [
+    "relay-ai"
+  ],
+  "exclude": [
+    "**/.venv",
+    "**/__pycache__"
+  ],
+  "extraPaths": [
+    "."
+  ],
+  "executionEnvironments": [
+    {
+      "root": "relay-ai",
+      "extraPaths": [
+        "."
+      ]
+    }
+  ],
+  "venvPath": "relay-ai",
+  "venv": ".venv",
+  "typeCheckingMode": "standard"
+}

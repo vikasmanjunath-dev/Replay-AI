@@ -1,0 +1,12 @@
+{
+  "python.analysis.extraPaths": [
+    "${workspaceFolder}/relay-ai"
+  ],
+  "python.analysis.include": [
+    "${workspaceFolder}/relay-ai"
+  ],
+  "python.analysis.exclude": [
+    "**/.venv",
+    "**/__pycache__"
+  ]
+}
