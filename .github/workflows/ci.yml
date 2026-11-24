@@ -14,6 +14,35 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  sandbox-rehearsal:
+    name: Docker checkout rehearsal
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: relay-ai/requirements.txt
+
+      - name: Install rehearsal dependencies
+        run: |
+          python -m venv relay-ai/.venv
+          relay-ai/.venv/bin/python -m pip install -r relay-ai/requirements.txt
+
+      - name: Build pinned sandbox image
+        run: docker build --file relay-ai/sandbox/Dockerfile --tag relay-ai-sandbox:python3.11 relay-ai/sandbox
+
+      - name: Bind rehearsal to the built image ID
+        run: echo "RELAY_SANDBOX_IMAGE=$(docker image inspect --format '{{.Id}}' relay-ai-sandbox:python3.11)" >> "$GITHUB_ENV"
+
+      - name: Run fake-provider checkout flow in Docker
+        run: ./scripts/rehearse_checkout_fake.sh --docker
+
   backend:
     name: Backend tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
