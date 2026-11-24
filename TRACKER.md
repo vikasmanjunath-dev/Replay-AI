@@ -31,7 +31,7 @@ Planning source: [`PLAN.md`](./PLAN.md) defines sequence, dependencies, acceptan
 
 | Plan ID | Work | Status | Dependency / closure evidence |
 |---|---|---|---|
-| NEXT-01 | Freeze release commit and rerun CI plus host-free release checks | IN PROGRESS | Host-free checks passed on the current dirty tree (backend 130/3 skipped; frontend 20; compile/lint/build; preflight 3 PASS/5 ACTION REQUIRED/1 MANUAL/0 FAIL). Connected GitHub returned 404 for workflow-run lookup at baseline `2449185`, so CI status is unconfirmed. Still required: freeze a clean commit, confirm CI and image/artifact identities, and rerun checks against that commit. |
+| NEXT-01 | Freeze release commit and rerun CI plus host-free release checks | IN PROGRESS | Clean provisional candidate `564d8ba8cb865513dbc9715c92cca1eb281154bd`; host-free suite passed (backend 130 passed/3 skipped, frontend 20, compile/lint/build; preflight 3 PASS/5 ACTION REQUIRED/1 MANUAL/0 FAIL). Frontend JS/CSS SHA-256: `a2cc585b…53200` / `4ec779d4…1982`. CI/status lookup returned 404; Docker image identity could not be read because the local Docker socket denied access. Candidate is not frozen until CI and sandbox image/artifact identities are confirmed. |
 | NEXT-02 | Select target, hostname, owners, change window, and rollback path | BLOCKED | Service owner supplies H10-OWNERS information and selects the staging/production host and hostname. |
 | NEXT-03 | Approve provider data use, SLOs, load profile, backup/RPO/RTO, and integration scope | BLOCKED | Data owner, security owner, and SLO/service owner record approval references and numeric thresholds; decide whether Switch/GitHub live checks are in scope. |
 | NEXT-04 | Prepare isolated staging and protected configuration | BLOCKED | Start after NEXT-02 and NEXT-03 close; deployment owner provisions secrets, TLS/proxy, data/workspace/backup paths, alerting, monitoring, and target-built digest-pinned sandbox image; production preflight/readiness pass. |
@@ -130,6 +130,11 @@ The detailed procedure and pass/fail conditions are in [`PLAN.md`](./PLAN.md). O
 - Rerun passed: backend 130 passed/3 skipped, frontend 20 passed, Python compilation, TypeScript lint, Vite production build, and `git diff --check`; deployment preflight returned 3 PASS, 5 ACTION REQUIRED, 1 MANUAL, 0 FAIL. This is a dirty-tree diagnostic, not a frozen release-candidate result.
 - Connected GitHub workflow-run lookup for baseline `2449185` returned 404; CI evidence remains unconfirmed.
 - NEXT-01 remains IN PROGRESS until a clean release revision, CI evidence, and artifact/image identities are selected.
+
+### 2026-11-24 — Re-run NEXT-01 on a clean candidate
+- Committed the active-task limit (`4170515`), GitHub revision preview (`f5ca1f0`), and release-plan/docs updates (`564d8ba`) as separate chunks. No push performed.
+- On clean candidate `564d8ba8cb865513dbc9715c92cca1eb281154bd`, host-free suite passed: backend 130 passed/3 skipped, frontend 20 passed, compile/lint/build passed; preflight 3 PASS/5 ACTION REQUIRED/1 MANUAL/0 FAIL. Frontend build artifact hashes are recorded in NEXT-01 above.
+- GitHub CI/status calls for this repository returned 404. Docker image inspection was denied by the local Docker socket. NEXT-01 remains IN PROGRESS pending those identities; target host/owners remain release blockers.
 
 ### 2026-11-24 — Preview GitHub branch SHA matches before PR creation
 - Branch suggestions now include validated remote commit SHAs. The dashboard shows whether the selected head/base currently match the task commit/base and can refresh the list after branch publication; this is advisory because the API still performs the authoritative comparison when creating a PR.
