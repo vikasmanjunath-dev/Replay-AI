@@ -169,7 +169,11 @@ def test_seeded_checkout_scenario_reaches_evidence_gated_human_review(tmp_path, 
             time.sleep(0.05)
 
         assert task["status"] == PipelineStatus.AWAITING_HUMAN_APPROVAL.value, task
-        assert task["sandbox_result"]["tests_passed"] is True, task["sandbox_result"]
+        sandbox_result = task["sandbox_result"]
+        assert sandbox_result["tests_passed"] is True, (
+            f"sandbox failed with exit {sandbox_result['exit_code']}; "
+            f"stdout={sandbox_result['stdout']!r}; stderr={sandbox_result['stderr']!r}"
+        )
         assert task["sandbox_result"]["exit_code"] == 0
         assert task["sandbox_result"]["isolation_mode"] == ("docker" if use_docker else "subprocess_dev")
         assert "2 passed" in task["sandbox_result"]["stdout"]
