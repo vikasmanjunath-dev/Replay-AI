@@ -43,7 +43,7 @@ from schemas import (
     ReportRequest,
     TaskActionRequest,
 )
-from storage import SQLiteTaskStore
+from storage import ActiveTaskLimitExceeded, SQLiteTaskStore
 from worker import PipelineWorker
 from observability import RequestMetrics, configure_logging
 from redaction import redact_sensitive_text
@@ -67,6 +67,12 @@ PIPELINE_COMPLETION_SLO_MS = 15 * 60 * 1000
 MAX_JSON_REQUEST_BYTES = 10 * 1024 * 1024
 MAX_MULTIPART_REQUEST_BYTES = MAX_UPLOAD_BYTES + 1024 * 1024
 MAX_OTHER_REQUEST_BYTES = 1024 * 1024
+try:
+    MAX_ACTIVE_TASKS_PER_OWNER = int(os.environ.get("RELAY_MAX_ACTIVE_TASKS_PER_OWNER", "5"))
+except ValueError as error:
+    raise RuntimeError("RELAY_MAX_ACTIVE_TASKS_PER_OWNER must be an integer between 1 and 1000.") from error
+if not 1 <= MAX_ACTIVE_TASKS_PER_OWNER <= 1000:
+    raise RuntimeError("RELAY_MAX_ACTIVE_TASKS_PER_OWNER must be an integer between 1 and 1000.")
 APPLIED_ROOT = Path(os.environ.get("RELAY_APPLIED_ROOT", str(Path(__file__).with_name(".relay_applied"))))
 REPOSITORY_TARGETS = RepositoryTargetRegistry(
     os.environ.get("RELAY_REPOSITORIES_JSON"), lock_root=APPLIED_ROOT / ".target-locks"
@@ -733,7 +739,15 @@ async def submit_report_json(payload: ReportRequest, request: Request):
     """
     task_id = str(uuid.uuid4())
     task = _new_task(task_id, payload, request.state.actor)
-    tasks_db.create_task(task, payload.codebase)
+    try:
+        tasks_db.create_task(
+            task, payload.codebase, max_active_tasks_per_owner=MAX_ACTIVE_TASKS_PER_OWNER
+        )
+    except ActiveTaskLimitExceeded as error:
+        raise HTTPException(
+            status_code=429,
+            detail=f"You already have {MAX_ACTIVE_TASKS_PER_OWNER} queued or running tasks. Wait for one to finish before submitting another.",
+        ) from error
     return task
 
 
@@ -823,7 +837,15 @@ async def submit_repository_zip(
     report_req = ReportRequest(chat_message=bug_report, codebase=codebase, repository_id=repository_id)
     task_id = str(uuid.uuid4())
     task = _new_task(task_id, report_req, request.state.actor)
-    tasks_db.create_task(task, report_req.codebase)
+    try:
+        tasks_db.create_task(
+            task, report_req.codebase, max_active_tasks_per_owner=MAX_ACTIVE_TASKS_PER_OWNER
+        )
+    except ActiveTaskLimitExceeded as error:
+        raise HTTPException(
+            status_code=429,
+            detail=f"You already have {MAX_ACTIVE_TASKS_PER_OWNER} queued or running tasks. Wait for one to finish before submitting another.",
+        ) from error
     return task
 
 

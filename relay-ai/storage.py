@@ -15,6 +15,10 @@ from pathlib import Path
 from schemas import EvidenceEvent, PipelineStatus, PipelineTaskResponse
 
 
+class ActiveTaskLimitExceeded(Exception):
+    """Raised when an owner already has the configured number of queued/running jobs."""
+
+
 class SQLiteTaskStore(MutableMapping[str, PipelineTaskResponse]):
     """Persist task snapshots locally while preserving the mapping API used by the API layer."""
 
@@ -539,11 +543,26 @@ class SQLiteTaskStore(MutableMapping[str, PipelineTaskResponse]):
     def _snapshot_digest(serialized: str) -> str:
         return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
-    def create_task(self, task: PipelineTaskResponse, files: dict[str, str], max_attempts: int = 3) -> None:
+    def create_task(
+        self,
+        task: PipelineTaskResponse,
+        files: dict[str, str],
+        max_attempts: int = 3,
+        max_active_tasks_per_owner: int | None = None,
+    ) -> None:
         now = self._utc_now()
         serialized_files = json.dumps(files, ensure_ascii=False)
         with self._lock, self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
+            if max_active_tasks_per_owner is not None:
+                active_count = connection.execute(
+                    "SELECT COUNT(*) AS count FROM pipeline_jobs "
+                    "JOIN tasks ON tasks.task_id = pipeline_jobs.task_id "
+                    "WHERE tasks.owner_id = ? AND pipeline_jobs.status IN ('QUEUED', 'RUNNING', 'CANCEL_REQUESTED')",
+                    (task.owner_id,),
+                ).fetchone()["count"]
+                if active_count >= max_active_tasks_per_owner:
+                    raise ActiveTaskLimitExceeded
             task_id = task.task_id
             connection.execute(
                 "INSERT INTO tasks(task_id, owner_id, updated_at, status, payload) VALUES(?, ?, ?, ?, ?)",

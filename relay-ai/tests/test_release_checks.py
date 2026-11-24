@@ -127,7 +127,7 @@ def test_archive_upload_rejects_hostile_entries_before_persisting(monkeypatch):
     import main
 
     persisted = []
-    monkeypatch.setattr(main.tasks_db, "create_task", lambda task, codebase: persisted.append((task, codebase)))
+    monkeypatch.setattr(main.tasks_db, "create_task", lambda task, codebase, **_kwargs: persisted.append((task, codebase)))
     monkeypatch.setattr(main.tasks_db, "consume_rate_limit", lambda *args, **kwargs: (True, 0))
     client = TestClient(app)
 
@@ -167,7 +167,7 @@ def test_archive_upload_rejects_entry_count_limit_before_persisting(monkeypatch)
     import main
 
     persisted = []
-    monkeypatch.setattr(main.tasks_db, "create_task", lambda task, codebase: persisted.append((task, codebase)))
+    monkeypatch.setattr(main.tasks_db, "create_task", lambda task, codebase, **_kwargs: persisted.append((task, codebase)))
     monkeypatch.setattr(main.tasks_db, "consume_rate_limit", lambda *args, **kwargs: (True, 0))
     oversized = _zip_bytes([(f"src/file_{index}.py", b"x") for index in range(main.MAX_ARCHIVE_FILES + 1)])
     response = TestClient(app).post(
@@ -184,7 +184,7 @@ def test_archive_upload_enforces_upload_member_and_expanded_size_limits(monkeypa
     import main
 
     persisted = []
-    monkeypatch.setattr(main.tasks_db, "create_task", lambda task, codebase: persisted.append((task, codebase)))
+    monkeypatch.setattr(main.tasks_db, "create_task", lambda task, codebase, **_kwargs: persisted.append((task, codebase)))
     monkeypatch.setattr(main.tasks_db, "consume_rate_limit", lambda *args, **kwargs: (True, 0))
     client = TestClient(app)
 
