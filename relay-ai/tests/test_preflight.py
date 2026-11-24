@@ -4,6 +4,16 @@ from pathlib import Path
 from preflight import REQUIRED_CSP_DIRECTIVES, SIGNOFF_FIELDS, evaluate_preflight
 
 
+def _nginx_template_with_delivery_headers(content_security_policy):
+    from preflight import REQUIRED_DELIVERY_HEADERS
+
+    directives = []
+    for header in REQUIRED_DELIVERY_HEADERS:
+        value = content_security_policy if header == "Content-Security-Policy" else "configured"
+        directives.append(f'add_header {header} "{value}" always;')
+    return "server_name relay.example.test;\n" + "\n".join(directives)
+
+
 def test_release_signoff_template_matches_preflight_schema():
     template_path = Path(__file__).resolve().parents[2] / "deploy" / "RELEASE_SIGNOFF_TEMPLATE.json"
     template = json.loads(template_path.read_text(encoding="utf-8"))
@@ -131,11 +141,8 @@ def test_complete_evidence_signoffs_clear_manual_release_gates(tmp_path):
     (tmp_path / "dist" / "relay-mark.svg").write_text("<svg />")
     (tmp_path / "dist" / "index.html").write_text('<script src="/assets/app.js"></script>')
     (tmp_path / "deploy" / "nginx").mkdir(parents=True)
-    from preflight import REQUIRED_DELIVERY_HEADERS
-
-    nginx = "server_name relay.example.test;\n" + "\n".join(
-        f'add_header {header} "{("; ".join(REQUIRED_CSP_DIRECTIVES) + "; connect-src \'self\' https:") if header == "Content-Security-Policy" else "configured"}" always;'
-        for header in REQUIRED_DELIVERY_HEADERS
+    nginx = _nginx_template_with_delivery_headers(
+        "; ".join(REQUIRED_CSP_DIRECTIVES) + "; connect-src 'self' https:"
     )
     (tmp_path / "deploy" / "nginx" / "relay-ai.conf").write_text(nginx)
     signoff = {field: f"evidence: {field}" for field in SIGNOFF_FIELDS}
@@ -157,12 +164,7 @@ def test_complete_evidence_signoffs_clear_manual_release_gates(tmp_path):
 
 def test_preflight_rejects_permissive_content_security_policy(tmp_path):
     (tmp_path / "deploy" / "nginx").mkdir(parents=True)
-    from preflight import REQUIRED_DELIVERY_HEADERS
-
-    nginx = "server_name relay.example.test;\n" + "\n".join(
-        f'add_header {header} "{"default-src *" if header == "Content-Security-Policy" else "configured"}" always;'
-        for header in REQUIRED_DELIVERY_HEADERS
-    )
+    nginx = _nginx_template_with_delivery_headers("default-src *")
     (tmp_path / "deploy" / "nginx" / "relay-ai.conf").write_text(nginx)
 
     checks = evaluate_preflight(tmp_path, {})

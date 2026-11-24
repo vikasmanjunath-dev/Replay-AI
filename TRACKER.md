@@ -31,7 +31,7 @@ Planning source: [`PLAN.md`](./PLAN.md) defines sequence, dependencies, acceptan
 
 | Plan ID | Work | Status | Dependency / closure evidence |
 |---|---|---|---|
-| NEXT-01 | Freeze release commit and rerun CI plus host-free release checks | BLOCKED | Clean candidate `ee827e4b3c72` passed host-free suite (backend 130 passed/3 skipped, frontend 20, compile/lint/build; preflight 3 PASS/5 ACTION REQUIRED/1 MANUAL/0 FAIL). Frontend JS/CSS SHA-256: `a2cc585b…53200` / `4ec779d4…1982`. On the actual remote (`vikasmanjunath-dev/Replay-AI`), this candidate has no commit statuses or workflow runs; remote `main` remains at `2449185`, and the connected GitHub account is read-only, so a candidate cannot be pushed to trigger CI. The local Docker daemon is unavailable, preventing image identity inspection. Resume when CI can be triggered and the pinned image can be inspected. |
+| NEXT-01 | Freeze release commit and rerun CI plus host-free release checks | IN PROGRESS | Push succeeded; remote `main` is `6806022594b1587e7fb09ea87001fc99b20065b1`. CI run `45436918585`: Python 3.11 failed test collection because `test_preflight.py` used f-string syntax unsupported by 3.11; Python 3.12 and frontend jobs passed. Rewrote the test fixture without nested f-string expressions. Local host-free suite passes: backend 130 passed/3 skipped, frontend 20, compile/lint/build, preflight 3 PASS/5 ACTION REQUIRED/1 MANUAL/0 FAIL. Push the fix and verify the new CI run. Docker daemon is unavailable, preventing sandbox image identity inspection. |
 | NEXT-02 | Select target, hostname, owners, change window, and rollback path | BLOCKED | Service owner supplies H10-OWNERS information and selects the staging/production host and hostname. |
 | NEXT-03 | Approve provider data use, SLOs, load profile, backup/RPO/RTO, and integration scope | BLOCKED | Data owner, security owner, and SLO/service owner record approval references and numeric thresholds; decide whether Switch/GitHub live checks are in scope. |
 | NEXT-04 | Prepare isolated staging and protected configuration | BLOCKED | Start after NEXT-02 and NEXT-03 close; deployment owner provisions secrets, TLS/proxy, data/workspace/backup paths, alerting, monitoring, and target-built digest-pinned sandbox image; production preflight/readiness pass. |
@@ -147,6 +147,10 @@ These are deliberately deferred until their triggers are evidenced after the pil
 ### 2026-11-24 — Verify NEXT-01 against the configured remote
 - Corrected the prior CI lookup target: the configured remote is `vikasmanjunath-dev/Replay-AI`. Its `main` remains at `2449185`; the exact candidate `ee827e4b3c72` has zero commit statuses and zero Actions runs. The connected GitHub account has read-only permission, so it cannot publish a candidate to trigger CI.
 - Docker sandbox image identity remains unverified because the local Docker daemon is unavailable. NEXT-01 is BLOCKED; no candidate freeze is claimed.
+
+### 2026-11-24 — Fix Python 3.11 CI test collection
+- Push of `6806022` triggered workflow run `45436918585`: frontend and Python 3.12 passed, while Python 3.11 failed parsing nested f-string expressions in `relay-ai/tests/test_preflight.py`.
+- Replaced those expressions with a shared plain-loop Nginx fixture helper. Focused Python 3.11 tests pass (9); the full local release check passes on Python 3.12 (130 backend passed/3 skipped, 20 frontend passed, compile/lint/build passed, preflight 3 PASS/5 ACTION REQUIRED/1 MANUAL/0 FAIL). CI rerun on the fix remains required.
 
 ### 2026-11-24 — Run host-free release checks for NEXT-01
 - The first run found three ZIP test doubles that did not accept the new active-task-limit keyword; updated them to match the storage API.
