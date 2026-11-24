@@ -144,6 +144,7 @@ These are deliberately deferred until their triggers are evidenced after the pil
 - Added `scripts/rehearse_checkout_fake.sh --docker`; it requires a local daemon and digest-pinned image, disables unsafe subprocess mode, and uses a host-shared temporary root for Colima mounts. The default remains deterministic for CI.
 - The opt-in fake-provider API/worker rehearsal passed with the pinned local image: task reached human review, the two checkout tests passed in Docker, and no operator action occurred. Focused script/API tests passed (4).
 - After making the shared temporary workspace unique and self-cleaning, the full host-free release suite passed again: backend 130 passed/3 skipped, frontend 20 passed, compile/lint/build passed, and preflight returned 3 PASS/5 ACTION REQUIRED/1 MANUAL/0 FAIL. The final Docker-mode rehearsal also passed.
+- Commit `8250d14` is pushed; exact-SHA CI run `45441880157` passed all three jobs, including Python 3.11/3.12 tests and frontend checks.
 - P-A2 remains blocked only on the protected Gemini key for its live-provider leg; H6 remains blocked on deployment-host evidence.
 
 ### 2026-11-24 — Plan advanced post-pilot capabilities
