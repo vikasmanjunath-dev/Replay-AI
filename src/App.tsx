@@ -24,6 +24,7 @@ type RepositoryTarget = { repository_id: string; branch: string; revision: strin
 type ActionAudit = { action_id: number; actor: string; action: string; outcome: string; notes?: string | null; details: Record<string, unknown>; created_at: string };
 type PullRequestResult = { repository: string; number: number; url: string; state: string; already_open: boolean };
 type GitHubRepository = { id: number; full_name: string; private: boolean; default_branch: string; html_url: string };
+type GitHubBranch = { name: string; sha: string };
 type Readiness = { status: 'checking' | 'ready' | 'degraded' | 'offline' | 'auth'; detail?: string };
 type ThemePreference = 'system' | 'light' | 'dark';
 type ApiErrorPayload = { detail?: unknown; request_id?: unknown };
@@ -122,8 +123,10 @@ export default function App() {
   const [pullRequestTaskId, setPullRequestTaskId] = useState('');
   const [githubRepository, setGithubRepository] = useState<GitHubRepository | null>(null);
   const [githubRepositoryError, setGithubRepositoryError] = useState('');
-  const [githubBranches, setGithubBranches] = useState<string[]>([]);
+  const [githubBranches, setGithubBranches] = useState<GitHubBranch[]>([]);
   const [githubBranchesError, setGithubBranchesError] = useState('');
+  const [githubBranchesLoading, setGithubBranchesLoading] = useState(false);
+  const [githubBranchesReload, setGithubBranchesReload] = useState(0);
 
   const resolvedTheme = themePreference === 'system' ? (systemDark ? 'dark' : 'light') : themePreference;
   useEffect(() => {
@@ -229,12 +232,12 @@ export default function App() {
   }, [task?.task_id, task?.status, refresh]);
   useEffect(() => {
     if (session.role !== 'operator' || !task?.is_committed || !task.repository_id) {
-      setGithubRepository(null); setGithubRepositoryError(''); setGithubBranches([]); setGithubBranchesError('');
+      setGithubRepository(null); setGithubRepositoryError(''); setGithubBranches([]); setGithubBranchesError(''); setGithubBranchesLoading(false);
       return;
     }
     let active = true;
     setGithubRepository(null); setGithubRepositoryError('');
-    setGithubBranches([]); setGithubBranchesError('');
+    setGithubBranches([]); setGithubBranchesError(''); setGithubBranchesLoading(true);
     void api<unknown>(`/api/v1/github/repositories/${encodeURIComponent(task.repository_id)}`)
       .then((repository) => {
         if (!active) return;
@@ -243,11 +246,12 @@ export default function App() {
         setPrBase(repository.default_branch);
       })
       .catch((reason) => { if (active) setGithubRepositoryError(describeRequestError(reason, 'GitHub repository is not available.')); });
-    void api<string[]>(`/api/v1/github/repositories/${encodeURIComponent(task.repository_id)}/branches`)
-      .then((branches) => { if (active) setGithubBranches(branches.filter((branch) => typeof branch === 'string')); })
-      .catch((reason) => { if (active) setGithubBranchesError(describeRequestError(reason, 'Could not load branch suggestions.')); });
+    void api<GitHubBranch[]>(`/api/v1/github/repositories/${encodeURIComponent(task.repository_id)}/branches`)
+      .then((branches) => { if (active) setGithubBranches(branches.filter((branch) => typeof branch?.name === 'string' && typeof branch?.sha === 'string')); })
+      .catch((reason) => { if (active) setGithubBranchesError(describeRequestError(reason, 'Could not load branch suggestions.')); })
+      .finally(() => { if (active) setGithubBranchesLoading(false); });
     return () => { active = false; };
-  }, [session.role, task?.task_id, task?.is_committed, task?.repository_id]);
+  }, [session.role, task?.task_id, task?.is_committed, task?.repository_id, githubBranchesReload]);
   useEffect(() => {
     if (!task?.task_id || !task.is_committed) return;
     setPrHead('');
@@ -371,6 +375,8 @@ export default function App() {
   const recordedPullRequestNumber = typeof recordedPullRequest?.details.number === 'number' ? recordedPullRequest.details.number : '—';
   const recordedPullRequestState = typeof recordedPullRequest?.outcome === 'string' ? recordedPullRequest.outcome : 'open';
   const visiblePullRequest = pullRequestTaskId === task?.task_id && pullRequest ? pullRequest : null;
+  const selectedHeadBranch = githubBranches.find((branch) => branch.name === prHead.trim());
+  const selectedBaseBranch = githubBranches.find((branch) => branch.name === prBase.trim());
   return <div className="layout">
     <a className="skip-link sr-only" href="#main-content">Skip to main content</a>
     <aside className="sidebar">
@@ -420,11 +426,14 @@ export default function App() {
               {githubRepository && <p className="target-help" role="status" aria-live="polite">Connected repository: <a href={githubRepository.html_url} target="_blank" rel="noreferrer">{githubRepository.full_name}</a></p>}
               {githubRepositoryError && <p className="target-help" role="alert">{githubRepositoryError} Check that this repository is in the backend GitHub allow-list.</p>}
               {githubBranchesError && <p className="target-help" role="status">Branch suggestions are unavailable; you can still enter branch names.</p>}
-              <p className="target-help">Publish the task commit to the head branch first. Its base must match this task’s recorded base revision; Relay checks both exact SHAs before opening the PR.</p>
+              <p className="target-help">Publish the task commit to the head branch first. Its base must match this task’s recorded base revision. The branch SHA preview is advisory; Relay rechecks both exact SHAs before opening the PR.</p>
+              <button className="patch-download" disabled={githubBranchesLoading} onClick={() => setGithubBranchesReload((value) => value + 1)}>{githubBranchesLoading ? 'Refreshing branch revisions…' : 'Refresh branch revisions'}</button>
               {task.repository_base_revision && <div className="revision-row"><span><small>EXPECTED BASE</small><code>{task.repository_base_revision}</code></span><button className="copy-revision" onClick={() => void copyRevision('Base SHA', task.repository_base_revision!)}>Copy base SHA</button></div>}
-              <datalist id="github-branches">{githubBranches.map((branch) => <option key={branch} value={branch}/>)}</datalist>
+              <datalist id="github-branches">{githubBranches.map((branch) => <option key={branch.name} value={branch.name}/>)}</datalist>
               <label className="field-label" htmlFor="pr-head">PUBLISHED HEAD BRANCH</label><input id="pr-head" list="github-branches" className="action-input" maxLength={240} value={prHead} onChange={(event) => { setPrHead(event.target.value); removeStorage('session', `relay-action-key:${task.task_id}:open_pull_request`); }} placeholder="feature/fix-checkout"/>
+              {selectedHeadBranch && <small className={selectedHeadBranch.sha === task.commit_hash ? 'revision-match' : 'revision-mismatch'} role="status">Remote head {selectedHeadBranch.sha === task.commit_hash ? 'matches' : 'does not match'} the task commit ({selectedHeadBranch.sha.slice(0, 12)}).</small>}
               <label className="field-label" htmlFor="pr-base">BASE BRANCH</label><input id="pr-base" list="github-branches" className="action-input" maxLength={240} value={prBase} onChange={(event) => { setPrBase(event.target.value); removeStorage('session', `relay-action-key:${task.task_id}:open_pull_request`); }} placeholder="main"/>
+              {selectedBaseBranch && task.repository_base_revision && <small className={selectedBaseBranch.sha === task.repository_base_revision ? 'revision-match' : 'revision-mismatch'} role="status">Remote base {selectedBaseBranch.sha === task.repository_base_revision ? 'matches' : 'does not match'} the task base ({selectedBaseBranch.sha.slice(0, 12)}).</small>}
               <label className="field-label" htmlFor="pr-title">TITLE</label><input id="pr-title" className="action-input" maxLength={200} value={prTitle} onChange={(event) => { setPrTitle(event.target.value); removeStorage('session', `relay-action-key:${task.task_id}:open_pull_request`); }} placeholder={task.triage?.title || 'Fix'} />
               <label className="field-label" htmlFor="pr-body">DESCRIPTION · OPTIONAL</label><textarea id="pr-body" className="action-input" maxLength={20000} value={prBody} onChange={(event) => { setPrBody(event.target.value); removeStorage('session', `relay-action-key:${task.task_id}:open_pull_request`); }} placeholder="Summarize the fix and verification." />
               <label className="pr-draft"><input type="checkbox" checked={prDraft} onChange={(event) => { setPrDraft(event.target.checked); removeStorage('session', `relay-action-key:${task.task_id}:open_pull_request`); }}/> Create as draft</label>

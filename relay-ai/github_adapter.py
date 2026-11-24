@@ -137,8 +137,8 @@ class GitHubAdapter:
             raise GitHubAdapterError("GitHub returned invalid repository metadata.")
         return {key: data.get(key) for key in ("id", "full_name", "private", "default_branch", "html_url")}
 
-    def get_branches(self, repository_id: str) -> list[str]:
-        """Return up to 100 validated branch names for form suggestions."""
+    def get_branches(self, repository_id: str) -> list[dict[str, str]]:
+        """Return up to 100 validated branch names and SHAs for form suggestions."""
         full_name = self._config.repository(repository_id)
         owner, name = full_name.split("/", 1)
         data = self._request(
@@ -147,14 +147,14 @@ class GitHubAdapter:
         )
         if not isinstance(data, list) or len(data) > 100:
             raise GitHubAdapterError("GitHub returned an invalid branch list.")
-        branches: list[str] = []
+        branches: list[dict[str, str]] = []
         for branch in data:
             commit = branch.get("commit") if isinstance(branch, dict) else None
             sha = commit.get("sha") if isinstance(commit, dict) else None
             branch_name = branch.get("name") if isinstance(branch, dict) else None
             if not isinstance(branch_name, str) or not _valid_git_ref(branch_name) or not isinstance(sha, str) or not _SHA.fullmatch(sha):
                 raise GitHubAdapterError("GitHub returned invalid branch metadata.")
-            branches.append(branch_name)
+            branches.append({"name": branch_name, "sha": sha})
         return branches
 
     def get_contents(self, repository_id: str, file_path: str, *, ref: str | None = None) -> dict[str, Any]:
