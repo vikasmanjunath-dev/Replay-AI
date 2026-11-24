@@ -1,5 +1,6 @@
 """Run the seeded checkout scenario through the API and worker with a fake provider."""
 
+import os
 import subprocess
 import sys
 import tempfile
@@ -131,7 +132,12 @@ def test_seeded_checkout_scenario_reaches_evidence_gated_human_review(tmp_path, 
                 applied_patch_cleanly=True,
             )
 
-    monkeypatch.setattr(main.orchestrator.sandbox, "run_tests", run_trusted_checkout_fixture)
+    use_docker = os.environ.get("RELAY_CHECKOUT_USE_DOCKER") == "true"
+    if use_docker:
+        assert main.orchestrator.sandbox.docker_available, "Docker mode must not fall back to host execution"
+        assert main.orchestrator.sandbox.sandbox_image_available, "Configured digest-pinned image is unavailable"
+    else:
+        monkeypatch.setattr(main.orchestrator.sandbox, "run_tests", run_trusted_checkout_fixture)
 
     with TestClient(main.app) as client:
         scenarios = client.get("/api/v1/scenarios")
@@ -165,7 +171,7 @@ def test_seeded_checkout_scenario_reaches_evidence_gated_human_review(tmp_path, 
         assert task["status"] == PipelineStatus.AWAITING_HUMAN_APPROVAL.value, task
         assert task["sandbox_result"]["tests_passed"] is True
         assert task["sandbox_result"]["exit_code"] == 0
-        assert task["sandbox_result"]["isolation_mode"] == "subprocess_dev"
+        assert task["sandbox_result"]["isolation_mode"] == ("docker" if use_docker else "subprocess_dev")
         assert "2 passed" in task["sandbox_result"]["stdout"]
         assert task["investigation_patch"]["files_changed"] == ["src/checkout.py"]
         assert task["reviewer"]["security_assessment"] == "PASS"

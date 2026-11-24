@@ -29,6 +29,8 @@ def test_rehearsal_shell_scripts_parse_and_show_help():
         )
         assert help_result.returncode == 0, help_result.stderr
         assert help_result.stdout.strip()
+        if script.name == "rehearse_checkout_fake.sh":
+            assert "--docker" in help_result.stdout
 
 
 def test_gemini_rehearsal_fails_closed_without_key():
