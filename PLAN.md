@@ -113,6 +113,70 @@ These are planning candidates, not release commitments. Keep them deferred until
 4. Preserve current safety boundaries: human approval stays mandatory; no push, merge, or deployment endpoint is implied by this roadmap.
 5. Give every selected feature an owner, baseline metric, target, migration/rollback plan, threat review, and evidence-backed `DONE` gate in `TRACKER.md`.
 
+### Advanced-feature execution playbooks (planning only)
+
+These playbooks make A1–A8 ready for estimation after a trigger is observed. They do not satisfy a trigger or authorize implementation. At feature start, open a scoped tracker task and an ADR with the evidence, owner, success metric, threat review, data classification, compatibility impact, migration/backfill, rollback, and operational support plan. If the trigger is absent, keep the feature `DEFERRED`.
+
+#### A1 — Data governance and tenant lifecycle
+
+- **Entry evidence:** approved broader data classes or a contractual retention, export, deletion, or residency requirement; named data owner and retention/legal interpretation.
+- **Design sequence:** define tenant identity and trusted assignment at authentication; map every task, snapshot, event, action, usage, workspace, backup, and repository reference to that boundary; choose tenant key and backup-encryption ownership; specify retention, export, deletion, restore, and audit semantics before schema changes.
+- **Implementation slices:** add a versioned migration with an explicit legacy single-tenant mapping; enforce tenant scope in storage queries and all API/worker/retention/backup paths; add idempotent export and deletion workflows with audit evidence; add key rotation and encrypted-backup operations; update operator tooling and data-handling docs.
+- **Exit checks:** negative cross-tenant tests for list/detail/events/actions/search/usage/workspaces/backups; migration and rollback on copied production-shaped data; deletion/export/restore and key-rotation drills; data-owner signoff. Do not claim deletion until primary, derived, log, and backup copies have documented expiry behavior.
+
+#### A2 — Enterprise identity and repository policy
+
+- **Entry evidence:** recorded failure of static bearer-token issuance, revocation, access review, or federation requirements; named identity and repository-policy owners.
+- **Design sequence:** choose issuer and supported OIDC flows, stable subject mapping, group-to-role policy, session/token lifetime, outage behavior, provisioning/deprovisioning, break-glass path, and audit events. Define repository authorization separately from broad operator role.
+- **Implementation slices:** add OIDC discovery/JWKS validation and login/callback or API token exchange; map verified subjects/groups to explicit roles with deny-by-default behavior; add per-repository grants and revocation; preserve a narrowly controlled break-glass account and record policy changes; migrate existing token users with a reversible overlap window.
+- **Exit checks:** issuer/audience/signature/nonce and key-rotation tests; expired, revoked, disabled-user, and IdP-outage cases; cross-user, cross-role, and cross-repository denial tests on every resource endpoint; audit completeness and rollback of the migration. Never grant operator access from an unverified claim or missing group mapping.
+
+#### A3 — Shared persistence and queue
+
+- **Entry evidence:** pilot measurements breach an owner-accepted single-host throughput or availability objective; measured bottleneck and target workload are recorded.
+- **Design sequence:** ADR compares transactional database/queue options against SQLite's transaction, lease, fencing, backup, and recovery semantics; choose global quota ownership, outbox delivery guarantees, migration method, and the supported single-/multi-region topology before code.
+- **Implementation slices:** define provider-neutral storage/queue contracts; implement schema migrations and idempotent job/outbox dispatch; preserve attempt fencing, cancellation, bounded retry, and atomic terminal state; move quotas and rate limits to shared transactional state; add backup/restore and operational telemetry; cut over with a bounded canary and documented rollback to the frozen single-host release.
+- **Exit checks:** duplicate delivery, worker crash, lease expiry, cancellation race, DB/queue partition, failover, restore, and migration rollback drills; load tests at the approved profile with measured recovery/throughput against SLOs. No dual-write or queue “exactly once” claim without a tested reconciliation protocol.
+
+#### A4 — Sandbox isolation tiers
+
+- **Entry evidence:** independent security review or approved workload requires stronger isolation than the current Docker boundary; threat model names attacker capability and protected host assets.
+- **Design sequence:** compare hardened containers and microVM/runtime options against supported hosts, startup cost, image provenance, patching, egress control, resource accounting, cleanup, and operations. Specify tier-selection policy and prohibit caller-controlled privilege or tier escalation.
+- **Implementation slices:** build a sandbox adapter contract; implement the selected runtime with immutable image identity, no secret injection, read-only inputs, explicit egress policy, resource/output/time limits, lifecycle cleanup, and structured failure evidence; add deployment preflight and operator runbooks.
+- **Exit checks:** independent threat review; adversarial escape, filesystem, network/DNS, metadata/credential, resource exhaustion, timeout, and cleanup tests; reproducible image provenance and target-host drills. A second tier is not enabled until failure defaults to the stricter tier or denies execution.
+
+#### A5 — Durable observability and SLO operations
+
+- **Entry evidence:** owners require retained service-wide SLO reporting, cross-restart history, or actionable paging beyond current process-local metrics.
+- **Design sequence:** agree SLI definitions, event-time windows, retention/deletion coupling, cardinality limits, alert ownership, redaction, sampling, and telemetry backend before choosing instrumentation/exporters.
+- **Implementation slices:** instrument request/task/worker/provider/sandbox spans with correlation IDs and bounded attributes; export metrics/logs/traces to the approved backend; implement queue/stage/failure/backup alerts and error-budget views; document access, retention, outage buffering, and deletion behavior.
+- **Exit checks:** metric reconciliation against persisted task evidence across restart; alert delivery and deduplication drills; no source text, tokens, or high-cardinality IDs in metric labels; dashboard and SLO calculations agree with documented cohort and deletion rules.
+
+#### A6 — Pipeline policy and cost controls
+
+- **Entry evidence:** pilot evidence shows repeated unsafe patches, provider failures, or material cost variance, with an owner-defined baseline and acceptable budget/error limits.
+- **Design sequence:** define versioned policy schema, evaluation order, authority, budget source, estimation uncertainty, provider fallback boundaries, and human escalation. Policies may narrow permissions or halt work; they must never auto-approve, apply, commit, merge, or deploy.
+- **Implementation slices:** store immutable policy version and decision evidence per task; add deterministic preflight checks for repository/file scope and provider choice; enforce per-owner/task budgets atomically before calls; implement bounded, schema-compatible fallback only for approved failure classes; surface rejection, uncertainty, and remaining budget in review UI.
+- **Exit checks:** replayable decisions; budget boundary/concurrency tests; stale/invalid policy rejection; provider timeout, quota, malformed output, fallback exhaustion, and cost-estimate error drills; tests prove human approval remains mandatory and no policy can expand allow-lists.
+
+#### A7 — Team review and change workflow
+
+- **Entry evidence:** named pilot users demonstrate shared ownership or separation-of-duties need; approved role matrix and escalation deadlines.
+- **Design sequence:** define reviewer assignment, eligible roles, repository-specific requirements, self-approval rule, reassignment/escalation, expiry, and how approval binds to an immutable diff/base/evidence revision.
+- **Implementation slices:** persist reviewer assignments and workflow deadlines; add assignment/reassignment/escalation actions with idempotency and append-only audit; implement optional second approval for selected repositories; invalidate approvals when diff, base, tests, or policy evidence changes; expose queue and notification states accessibly.
+- **Exit checks:** role-matrix tests; self-approval, missing reviewer, revoked reviewer, stale evidence, reassignment race, duplicate action, and timeout drills; full audit reconstruction. A timeout never implies approval.
+
+#### A8 — Additional source-control providers
+
+- **Entry evidence:** named pilot/customer requires a specific provider and operation absent from the existing local/GitHub adapters; owner identifies required permissions and branch/MR semantics.
+- **Design sequence:** document a capability matrix and immutable revision model; define credential custody, webhook signature rules if used, rate-limit/retry behavior, provider-specific branch protection, and failure mapping. Keep branch publication, merge, and deployment out of scope unless separately authorized and threat-modeled.
+- **Implementation slices:** extract only the common repository contract proven by current adapters; implement one provider with least-privilege reads and approval-gated change-request creation; verify base/head SHA and idempotency; preserve provider-neutral task evidence and failure states; add configuration/preflight and operator recovery docs.
+- **Exit checks:** shared adapter contract suite; permission review; stale revision, duplicate request, rate limit, timeout, malformed response, and provider outage tests; provider failure leaves task/source evidence unchanged. No provider receives unrelated repository or write permissions.
+
+#### Shared release gate for every selected feature
+
+Before implementation, the tracker must name the trigger evidence, accountable owner, measurable baseline/target, dependencies, threat/data review, schema/API compatibility, migration and rollback steps, and operational owner. Close with focused tests, relevant full suites, CI on the exact commit, updated blueprint/docs where behavior changes, and an evidence-backed tracker status. Keep all unselected A-items `DEFERRED`; complete planning is not feature authorization.
+
 ## 9. Definition of done and change control
 
 For each implementation slice: define a single behavior; add/update focused tests; run the relevant suite; update `TRACKER.md`; update `BLUEPRINT.md` or `README.md` only when product/API behavior changes; preserve API compatibility or document migration; and review the diff for secrets, generated files, and unrelated artifacts. A task is `DONE` only with evidence, not because code exists. A host-dependent task is `BLOCKED` until its named owner supplies the missing resource and evidence. Do not store credentials in Git.

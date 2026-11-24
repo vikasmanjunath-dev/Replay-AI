@@ -43,7 +43,7 @@ The detailed procedure and pass/fail conditions are in [`PLAN.md`](./PLAN.md). O
 
 ## Advanced feature backlog
 
-These are deliberately deferred until their triggers are evidenced after the pilot. See the detailed scope and acceptance criteria in [`PLAN.md`](./PLAN.md#8-advanced-feature-roadmap-after-the-pilot).
+These are deliberately deferred until their triggers are evidenced after the pilot. Scope, execution slices, design decisions, and acceptance checks are in [`PLAN.md`](./PLAN.md#8-advanced-feature-roadmap-after-the-pilot).
 
 | ID | Feature | Status | Start trigger |
 |---|---|---|---|
@@ -139,6 +139,10 @@ These are deliberately deferred until their triggers are evidenced after the pil
 | P5-02 | Handle restricted browser storage gracefully | DONE | Dashboard reads/writes/removals for theme, API token, and action idempotency keys are guarded against storage access exceptions. Theme falls back to system mode; session values use an in-memory fallback for the current page, and token-save feedback explains whether the browser persisted the value or it is memory-only. Node built-in regression tests cover allowed, denied, quota, and stale-removal cases and run in CI. |
 
 ## Update log
+
+### 2026-11-24 — Detail post-pilot advanced execution plans
+- Expanded `PLAN.md` with entry evidence, design order, implementation slices, security/operational checks, and exit criteria for each A1–A8 capability, plus a shared authorization/release gate.
+- This is planning work only: no demand trigger or owner approval has been recorded, so ADV-01–ADV-08 and NEXT-07 remain `DEFERRED`; host/owner stages remain blocked.
 
 ### 2026-11-24 — Reverify the current pushed release snapshot
 - On clean `a2aa1f5fc17c2d93ec6c292c73b1745db918f0e4`, `deploy/run_host_free_release_checks.sh` passed: backend 132 passed/3 skipped, frontend 20 passed, compileall, TypeScript lint, Vite production build, and preflight 3 PASS/5 ACTION REQUIRED/1 MANUAL/0 FAIL. No host certification is implied.
