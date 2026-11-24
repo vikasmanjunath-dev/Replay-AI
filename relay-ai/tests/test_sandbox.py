@@ -2,6 +2,8 @@
 Unit tests for deterministic SandboxRunner in relay-ai/sandbox.py.
 """
 
+import os
+
 import pytest
 from sandbox import SandboxRunner, SandboxSecurityError
 
@@ -63,6 +65,41 @@ def test_sandbox_never_uses_host_subprocess_in_production_without_docker(monkeyp
     assert result.exit_code == 125
     assert result.tests_passed is False
     assert "Tests were not executed" in result.stderr
+
+
+def test_docker_runner_uses_non_root_service_identity_for_private_workspace(tmp_path, monkeypatch):
+    runner = SandboxRunner()
+    runner.docker_image = "relay-ai-sandbox:test"
+    monkeypatch.setattr(os, "geteuid", lambda: 1234)
+    monkeypatch.setattr(os, "getegid", lambda: 2345)
+    captured = {}
+
+    def capture(command, cwd, timeout):
+        captured["command"] = command
+        return 0, "ok", ""
+
+    monkeypatch.setattr(runner, "_execute_bounded", capture)
+
+    assert runner._run_in_docker(tmp_path, ["python", "-m", "pytest"])[0] == 0
+    docker_command = captured["command"]
+    assert docker_command[docker_command.index("--user") + 1] == "1234:2345"
+    assert "--cap-drop" in docker_command
+    assert "ALL" in docker_command
+
+
+def test_docker_runner_refuses_root_service_identity(tmp_path, monkeypatch):
+    runner = SandboxRunner()
+    monkeypatch.setattr(os, "geteuid", lambda: 0)
+    monkeypatch.setattr(
+        runner,
+        "_execute_bounded",
+        lambda *_args, **_kwargs: pytest.fail("root service must fail closed before Docker starts"),
+    )
+
+    exit_code, _stdout, stderr = runner._run_in_docker(tmp_path, ["python", "-m", "pytest"])
+
+    assert exit_code == 125
+    assert "dedicated non-root service account" in stderr
 
 
 def test_sandbox_validates_and_applies_unified_diff(sample_codebase, runner):

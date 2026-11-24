@@ -17,7 +17,7 @@ def test_docker_runtime_enforces_sandbox_policy():
     probe = '''import os, pathlib, socket
 
 def test_runtime_policy():
-    assert os.geteuid() == 65534
+    assert os.geteuid() != 0
     status = pathlib.Path("/proc/self/status").read_text()
     cap_eff = next(line.split()[1] for line in status.splitlines() if line.startswith("CapEff:"))
     assert int(cap_eff, 16) == 0

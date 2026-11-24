@@ -438,6 +438,12 @@ class SandboxRunner:
         """
         Executes test suite inside an isolated Docker container with zero network access.
         """
+        runtime_uid = os.geteuid()
+        if runtime_uid == 0:
+            return 125, "", (
+                "Docker sandbox requires the API to run as a dedicated non-root service account "
+                "so its private workspace can be mounted read-only without broadening file permissions."
+            )
         docker_cmd = [
             "docker", "run", "--rm",
             "--pull=never",
@@ -448,7 +454,7 @@ class SandboxRunner:
             "--cap-drop", "ALL",
             "--security-opt", "no-new-privileges",
             "--pids-limit", "128",
-            "--user", "65534:65534",
+            "--user", f"{runtime_uid}:{os.getegid()}",
             "--memory", "512m",
             "--cpus", "1.0",
             "--tmpfs", "/tmp:rw,noexec,nosuid,size=64m",
