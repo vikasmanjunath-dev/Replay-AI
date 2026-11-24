@@ -1,17 +1,45 @@
 # RELAY AI Build Tracker
 
-Last updated: 2026-11-23 (Asia/Kolkata)
+Last updated: 2026-11-24 (Asia/Kolkata)
 
 ## Status key
 
 - `DONE` — completed and recorded.
+- `READY` — may start when its stated context applies; not complete until evidence is recorded.
 - `IN PROGRESS` — actively being implemented.
 - `BLOCKED` — requires a decision or external dependency.
 - `TODO` — not started.
+- `DEFERRED` — intentionally postponed until its dependency or a demonstrated need exists.
 
-## Current milestone: Local end-to-end MVP — finishing durable operations, hardening, and product QA
+## Current milestone: Single-host release planning — implementation baseline complete; target-host and owner gates remain open
 
-## Follow-on milestone: Single-host production readiness (8/10 complete; 80%)
+## Follow-on milestone: Controlled single-host pilot — host-free preparation complete; release remains blocked pending H6/H10 evidence
+
+Planning source: [`PLAN.md`](./PLAN.md) defines sequence, dependencies, acceptance evidence, and deferred work. The rows below remain the status ledger; a plan or code artifact alone does not close a host/owner gate.
+
+## Current repository and release position
+
+| Check | State | Evidence |
+|---|---|---|
+| Source baseline | READY | At planning start, `main` and `origin/main` both pointed to `2449185` (`chore: verify commit and push setup`); `git status` was clean. Planning edits are the only intended changes in this work pass. |
+| Local MVP implementation | DONE | P0, P1, P2, P3, P4, and P5 implementation rows below are complete for the documented single-host scope. |
+| Host-free release preparation | DONE | Release scripts, CI, preflight, runbooks, backup/restore drills, and blocker/signoff artifacts are present; run them against the actual release candidate before a release. |
+| Production/pilot authorization | BLOCKED | No target host/hostname or named owners/data/SLO approvals are recorded. H6 and H10 rows below enumerate required evidence. |
+| Push status | DONE | The previous local `main` and `origin/main` divergence is resolved; both point to `2449185` at this planning baseline (`0` ahead, `0` behind). |
+
+## Next execution plan
+
+| Plan ID | Work | Status | Dependency / closure evidence |
+|---|---|---|---|
+| NEXT-01 | Freeze release commit and rerun CI plus host-free release checks | IN PROGRESS | Host-free checks passed on the current dirty tree (backend 130/3 skipped; frontend 20; compile/lint/build; preflight 3 PASS/5 ACTION REQUIRED/1 MANUAL/0 FAIL). Connected GitHub returned 404 for workflow-run lookup at baseline `2449185`, so CI status is unconfirmed. Still required: freeze a clean commit, confirm CI and image/artifact identities, and rerun checks against that commit. |
+| NEXT-02 | Select target, hostname, owners, change window, and rollback path | BLOCKED | Service owner supplies H10-OWNERS information and selects the staging/production host and hostname. |
+| NEXT-03 | Approve provider data use, SLOs, load profile, backup/RPO/RTO, and integration scope | BLOCKED | Data owner, security owner, and SLO/service owner record approval references and numeric thresholds; decide whether Switch/GitHub live checks are in scope. |
+| NEXT-04 | Prepare isolated staging and protected configuration | BLOCKED | Start after NEXT-02 and NEXT-03 close; deployment owner provisions secrets, TLS/proxy, data/workspace/backup paths, alerting, monitoring, and target-built digest-pinned sandbox image; production preflight/readiness pass. |
+| NEXT-05 | Complete target-host security, lifecycle, load, recovery, and accessibility drills | BLOCKED | Start after NEXT-04 closes; close applicable H6/H10 rows with named-owner evidence; resolve and retest release-blocking findings. |
+| NEXT-06 | Run bounded pilot and sign go/no-go | BLOCKED | Start after NEXT-05 closes; named service, security, operations, and data owners review pilot evidence, residual risks, rollback readiness, and sign the release record. |
+| NEXT-07 | Decide on scale or enterprise identity work from pilot evidence | DEFERRED | Only start with measured workload/identity requirements and an approved design, threat model, migration plan, and acceptance targets. |
+
+The detailed procedure and pass/fail conditions are in [`PLAN.md`](./PLAN.md). Optional Switch delivery and GitHub live PR verification are required only when the corresponding integration is enabled for the release; never provision credentials in chat or commit them.
 
 ## User-directed priority queue
 
@@ -23,7 +51,7 @@ Last updated: 2026-11-23 (Asia/Kolkata)
 | P-B1 | Add a replaceable Switch chat connector based on official docs | DONE | Optional outbound Switch notifier uses the documented agent message endpoint; posts content-minimal progress and final test/security/reviewer summary. Failed sends are not cached as delivered; URL/key bounds, port and whitespace/control checks fail closed; config representations omit the API key. Successful progress/final deduplication uses a bounded cache; delivery failures produce a safe task-ID warning. The mocked protocol/configuration suite currently passes 20 tests. No SDK is claimed and no inbound message subscription is implemented. |
 | P-B1-LIVE | Verify delivery to a provisioned Switch room | BLOCKED | Exact ask: have the Switch agent owner provision an agent API key and provide the approved Switch bridge base URL, agent ID, and room ID through the protected service environment. The credential is not needed in chat. |
 | P-B2 | Add a least-privilege GitHub read/PR adapter | DONE | Added operator-only allow-listed metadata/file reads, exact remote base/head comparison, approved-task PR creation, idempotency and audit. File paths and optional content refs are bounded/validated before network access; invalid branch input returns 400. Allow-list parsing rejects duplicate IDs; PR responses require a positive integer number and `open`/`closed` state. Viewer access is denied before adapter configuration is loaded. Fine-grained permissions documented. Branch must already be published; no push, merge, or deploy. Latest full backend suite: 128 passed/3 skipped. |
-| P-B2-UI | Expose the guarded GitHub PR flow in task review | DONE | Operators can select from up to 100 validated branch suggestions or enter a name; the UI validates configured repository metadata/default branch before prefilling bounded, editable PR title/body from task evidence, announces connection/errors accessibly, offers copy buttons for exact commit/base SHAs, submits idempotently, and displays the returned PR link from the response or audit history. `npm run lint`, `npm run build`, and Python compilation pass. |
+| P-B2-UI | Expose the guarded GitHub PR flow in task review | DONE | Operators can select from up to 100 validated branch name/SHA suggestions or enter a name; the UI previews whether selected remote SHAs match task provenance and can refresh that preview after publishing, while the API rechecks before PR creation. It also validates repository metadata, prefills bounded PR text, announces errors accessibly, copies exact task SHAs, submits idempotently, and restores the PR link from audit history. `npm run lint`, `npm run build`, and Python compilation pass. |
 | P-B2-LIVE | Verify read and PR creation against GitHub | BLOCKED | Exact ask: configure `RELAY_GITHUB_TOKEN` in the protected backend environment with access limited to the selected test repository and `RELAY_GITHUB_REPOSITORIES_JSON`; provide a published test branch whose head SHA equals a passing, approved task commit and an unchanged expected base SHA. No credentials belong in chat. |
 | P-B3 | Align pitch claims with implemented lifecycle states and actual agent count | DONE | Final 14-slide deck: `deliverables/RELAY_AI_Hackathon_Pitch_Deck_Aligned_v3.pptx`. Slide 7 and notes describe the optional GitHub adapter, existing published branch requirement, exact SHA check, human approval, and no push/merge/deploy. All 14 slides rendered; changed architecture slide visually inspected; package/layout/import validation passes with zero layout warnings. Regression test checks deck text/notes. |
 | P-C1 | Prepare deployment-host and owner release drills | DONE | Added `deploy/RELEASE_RUNBOOK.md`, a nine-item `deploy/RELEASE_BLOCKERS.json` matrix, host-free and target-host scripts, and mocked target-smoke/checklist tests. Ran the host-free suite successfully. No target was accessed or modified. |
@@ -35,6 +63,7 @@ Last updated: 2026-11-23 (Asia/Kolkata)
 | P-D6 | Align session badge with offline and degraded readiness states | DONE | Added `getSessionBadgeLabel()` to show API offline, authentication required, or session unavailable when readiness determines that state. Unit tests cover authenticated and unavailable states; the browser accessibility snapshot now reports “API offline” when readiness is OFFLINE rather than “Connecting.” |
 | P-D7 | Audit keyboard access for the offline viewer state | DONE | Browser Tab traversal reached the skip link, visible task filters, API token field, save/refresh/appearance controls, retry, and dismiss; each observed focus stop displayed a 3px outline. Task submission remains hidden because API failure leaves the viewer role unresolved; native screen-reader signoff remains blocked under H10-ACCESSIBILITY-REVIEW. |
 | P-D8 | Exercise local queue claims under concurrent worker load | DONE | Expanded the temporary-SQLite drill to 64 queued jobs drained by 16 concurrent store instances. Three consecutive fresh-database runs passed (1 test each, 0.41s/0.43s/0.37s). Every job was claimed once at attempt 1, claim events preceded ingestion events, and no jobs remained. This is a short local correctness burst, not sustained throughput or target-host capacity. |
+| P-D9 | Bound queued/running task admission per owner | DONE | `RELAY_MAX_ACTIVE_TASKS_PER_OWNER` defaults to 5 (range 1–1000); transactional SQLite admission protects JSON and ZIP submissions and returns HTTP 429 over cap. Focused tests cover API rejection for both submission forms and two concurrent store instances admitting exactly one task. This is single-host protection; H10 load review remains required. |
 | CMT-01 | Commit the verified dashboard reliability increment | DONE | Explicit user authorization received for the reliability-only commit on `main`; committed as `87f4930` (`fix: harden dashboard state and preflight boundaries`). No push performed. |
 | CMT-02 | Commit the seeded demo and rehearsal increment | DONE | User approved the exact commit on `main`, based on `87f4930`; committed as `fc0070b` (`feat: add repeatable seeded checkout demo`). No push performed. |
 | CMT-03 | Commit the Switch adapter increment | DONE | Completed as `ac6a50a` (`feat: add Switch room status notifications`), including the hardening follow-up and worker integration. |
@@ -42,7 +71,7 @@ Last updated: 2026-11-23 (Asia/Kolkata)
 | CMT-05 | Commit GitHub adapter and documentation | DONE | Adapter completed as `f77bf41`; integration/release docs completed as `a80c33a`. |
 | CMT-06 | Commit release readiness pack | DONE | Completed as `3a7393f` (`feat: prepare host-free release readiness drills`). |
 | CMT-07 | Commit dashboard PR and accessibility improvements | DONE | Completed as `326221f` (`feat: improve dashboard review and recovery flows`). |
-| CMT-08 | Push feature chunks to origin/main | BLOCKED | Automatic approval review rejected `git push origin main`: it requires explicit authorization naming the destination and payload because this exports potentially nonpublic contents to an unverified GitHub remote and updates the shared default branch. Local commits are ahead of `origin/main`; obtain that specific authorization before retrying. |
+| CMT-08 | Push feature chunks to origin/main | DONE | The previous divergence is resolved: `main` and `origin/main` both point to `2449185` at the 2026-11-24 planning baseline. The former approval-review block is closed; no push is pending. |
 
 | ID | Task | Status | Evidence / next step |
 |---|---|---|---|
@@ -96,13 +125,32 @@ Last updated: 2026-11-23 (Asia/Kolkata)
 
 ## Update log
 
+### 2026-11-24 — Run host-free release checks for NEXT-01
+- The first run found three ZIP test doubles that did not accept the new active-task-limit keyword; updated them to match the storage API.
+- Rerun passed: backend 130 passed/3 skipped, frontend 20 passed, Python compilation, TypeScript lint, Vite production build, and `git diff --check`; deployment preflight returned 3 PASS, 5 ACTION REQUIRED, 1 MANUAL, 0 FAIL. This is a dirty-tree diagnostic, not a frozen release-candidate result.
+- Connected GitHub workflow-run lookup for baseline `2449185` returned 404; CI evidence remains unconfirmed.
+- NEXT-01 remains IN PROGRESS until a clean release revision, CI evidence, and artifact/image identities are selected.
+
+### 2026-11-24 — Preview GitHub branch SHA matches before PR creation
+- Branch suggestions now include validated remote commit SHAs. The dashboard shows whether the selected head/base currently match the task commit/base and can refresh the list after branch publication; this is advisory because the API still performs the authoritative comparison when creating a PR.
+- No GitHub request was made; lint/build and Python compilation pass.
+
 ### 2026-11-23 — Add GitHub branch suggestions to PR creation
 - Added an operator-only, allow-listed branch-list API backed by GitHub's List branches endpoint. Responses are capped to one 100-branch page and branch names/full commit SHAs are validated; the dashboard exposes names as suggestions while preserving free-text entry.
 - Updated GitHub API documentation and token permission notes. No live GitHub call was made.
 
 ### 2026-11-23 — Record feature commits and push review block
 - Updated CMT-03 through CMT-07 to DONE with commit references for Switch, GitHub, release readiness, pitch, and dashboard chunks. Recorded the automatic approval review's rejection of `git push origin main`, which cited exporting potentially nonpublic repository contents to an unverified remote and updating the shared default branch.
-- Added separate backend and dashboard commits for validated GitHub branch suggestions, with API and permission details in both READMEs. Local commits remain ahead of `origin/main`; `.codex-presentation-build/` remains untracked and excluded.
+- Added separate backend and dashboard commits for validated GitHub branch suggestions, with API and permission details in both READMEs. At that time the local commits remained ahead of `origin/main`; see the 2026-11-24 synchronization entry for the current state.
+
+### 2026-11-24 — Synchronize release plan and repository status
+- Verified `main` and `origin/main` both point to `2449185` with zero ahead/behind commits and a clean checkout before documentation changes. Closed CMT-08; the earlier push-review block is historical and no push is pending at this baseline.
+- Replaced the stale MVP build roadmap with the current single-host release sequence and created [`PLAN.md`](./PLAN.md) covering owners/decisions, staging, target-host drills, pilot, acceptance evidence, rollback triggers, and deferred scale work.
+- No tests, deployment, host access, live integration calls, or external-state changes were performed in this planning pass. Release-host and named-owner gates remain BLOCKED.
+
+### 2026-11-24 — Bound queued task admission per owner
+- Added an owner-scoped maximum for queued/running tasks, configurable with `RELAY_MAX_ACTIVE_TASKS_PER_OWNER` (default 5, range 1–1000). SQLite checks the active count inside the same `BEGIN IMMEDIATE` transaction that stores the task, snapshot, events, and queue record, preventing concurrent API processes from racing past the cap. JSON and ZIP APIs return HTTP 429 when an owner is at capacity.
+- Updated setup/security docs. Added focused coverage for JSON/ZIP HTTP 429 behavior and simultaneous submissions through separate SQLite store instances; exactly one request is admitted at a cap of one. Focused suite: 2 passed. The cap is local to one SQLite database and is not a multi-host quota.
 
 ### 2026-11-22 — Add dashboard controls for verified GitHub PR creation
 - Added an operator-only PR form for committed repository tasks. It loads and validates allow-listed repository metadata/default branch, prefills an editable title and description from task evidence once commit evidence is ready, collects the already-published head branch and draft preference, shows the expected base revision with copy controls for the exact commit/base SHAs, explains the SHA verification requirement, sends an idempotent request to the guarded API, and displays the returned GitHub link. The link is recovered from action audit history after reload, and external URLs are constrained to `https://github.com`. A non-allow-listed local repository gets an inline configuration hint. Updated the root README to describe the dashboard flow.

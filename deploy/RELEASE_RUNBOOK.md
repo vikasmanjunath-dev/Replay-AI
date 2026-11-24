@@ -1,10 +1,11 @@
 # RELAY AI release verification runbook
 
-Status: host-free preparation is complete; deployment-host and named-owner work is blocked because no target host or owners have been selected. See [`RELEASE_BLOCKERS.json`](./RELEASE_BLOCKERS.json) for the exact ask and state for each action. Store evidence references in [`RELEASE_SIGNOFF_TEMPLATE.json`](./RELEASE_SIGNOFF_TEMPLATE.json). Never put secrets or source code in the evidence file.
+Status as of 2026-11-24: host-free preparation is complete; deployment-host and named-owner work is blocked because no target host or owners have been selected. The end-to-end sequence is in [`PLAN.md`](../PLAN.md); see [`RELEASE_BLOCKERS.json`](./RELEASE_BLOCKERS.json) for the exact ask and state for each action. Store evidence references in [`RELEASE_SIGNOFF_TEMPLATE.json`](./RELEASE_SIGNOFF_TEMPLATE.json). Never put secrets or source code in the evidence file. A planning update does not close a blocker or authorize deployment.
 
 ## 1. Before scheduling a host window
 
 - [ ] Review the current [`BLUEPRINT.md`](../BLUEPRINT.md), [`THREAT_MODEL.md`](../THREAT_MODEL.md), [`OPERATIONS.md`](../OPERATIONS.md), and [`deploy/systemd/README.md`](./systemd/README.md).
+- [ ] Follow the stage order and dependencies in [`PLAN.md`](../PLAN.md); do not start target-host work before the target, owners, data approval, SLOs, and change window are recorded.
 - [ ] Select a single-host target, public HTTPS hostname, primary and backup operators, security contact, and change/rollback owner.
 - [ ] Approve the Gemini source-data use and retention basis; store the approval reference only.
 - [ ] Agree on SLO thresholds, load profile, backup destination/age limit, and recovery point/time objectives.

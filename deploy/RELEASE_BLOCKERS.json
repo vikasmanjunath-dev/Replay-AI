@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "updated": "2026-11-10",
-  "note": "No deployment target has been selected. These are BLOCKED host/owner actions, not claims that production verification passed.",
+  "updated": "2026-11-24",
+  "note": "Reviewed with PLAN.md on 2026-11-24. No deployment target or named owners have been selected. These remain BLOCKED host/owner actions, not claims that production verification passed; planning updates do not close any blocker.",
   "blockers": [
     {"id":"H6-TARGET-ISOLATION","status":"BLOCKED","exact_ask":"Select the deployment host, then have its authorized operator run deploy/run_target_host_drills.sh against the pinned sandbox image and return the sanitized pass/fail summary plus image digest."},
     {"id":"H10-PROXY-AUTH-CORS","status":"BLOCKED","exact_ask":"Select the public hostname and target host; install the Nginx template with real certificate paths, configure production auth/CORS in the protected service environment, run nginx -t and the target smoke script, and record sanitized evidence."},

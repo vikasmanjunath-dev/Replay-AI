@@ -56,6 +56,12 @@ Terminal outcomes: `REJECTED`, `FAILED`, and `CANCELLED`. `RECEIVED`, `INVESTIGA
 
 The current pipeline has three model-backed calls: Stage A triage, Stage B investigation plus patch generation, and Stage C review. Sandbox tests run through a deterministic runner, and a human operator owns the approval decision. The orchestrator is workflow code, not a model specialist. An optional Switch room notifier posts outbound stage/status summaries; it does not consume inbound Switch events or start tasks from room messages.
 
+## Implementation baseline
+
+As of 2026-11-24, the local single-host MVP is implemented: the dashboard and versioned FastAPI API are connected; task, event, job, and action data persist in SQLite; the lease-based worker supports bounded retries and recovery; the Gemini provider is replaceable by a deterministic fake; patch validation and Docker sandbox execution fail closed; approval, apply, and commit are distinct audited operations; per-user token authorization is available; and the local repository and optional GitHub PR adapters are allow-listed. The UI includes task history, progress, evidence review, decision controls, responsive states, and the guarded PR flow. CI, host-free release checks, backup/restore tools, systemd/Nginx examples, a threat model, and runbooks are present.
+
+This baseline is evidence of implemented local capabilities, not a production launch approval. As of the planning baseline, `main` and `origin/main` both point to `2449185` and the checkout had no source changes. No production host has been selected. Deployment-host sandbox isolation, proxy/auth/CORS, live backup/restore and alert delivery, owner reviews, Gemini data-use approval, accessibility sign-off, load evidence, and SLO acceptance remain release gates. The detailed execution order and evidence checklist are in [`PLAN.md`](./PLAN.md) and [`deploy/RELEASE_RUNBOOK.md`](./deploy/RELEASE_RUNBOOK.md).
+
 ## Main journeys
 
 1. **Submit:** enter a report and upload/choose a repository snapshot; validate size/type/path limits; return task ID immediately.
@@ -102,35 +108,55 @@ Secrets, raw credentials, and unnecessary source contents must not be copied int
 
 ## Delivery roadmap and acceptance gates
 
-### Phase 0 — Make the current backend truthful and usable
-- Correct Gemini SDK call; document required configuration and failures.
-- Add policy/state checks so failed tests or a rejecting reviewer cannot be approved by default.
-- Harden ZIP and workspace path handling and add strict upload limits.
-- Make action names and docs honest: either implement repository apply/commit with a target worktree or disable them until that adapter exists.
-- Add deterministic fake-provider injection so pipeline behavior is usable without paid model calls.
-- Gate: pipeline and action behavior verified with focused automated checks; no test execution is claimed until run.
+The build phases below are complete; remaining work is an owner-led, single-host release process. Work must proceed in dependency order. A later phase cannot waive an earlier security, data, or operational gate. No public deployment, customer data, or untrusted repository execution is authorized by this blueprint. The plan is maintained in [`PLAN.md`](./PLAN.md); exact external asks and evidence fields remain in [`TRACKER.md`](./TRACKER.md), [`deploy/RELEASE_BLOCKERS.json`](./deploy/RELEASE_BLOCKERS.json), and [`deploy/RELEASE_SIGNOFF_TEMPLATE.json`](./deploy/RELEASE_SIGNOFF_TEMPLATE.json).
 
-### Phase 1 — Durable asynchronous backend
-- Introduce database-backed task/event persistence and schema migrations.
-- Split submission from worker execution; expose progress polling/events, cancellation, retry, and pagination.
-- Add structured logging, readiness, bounded retries, and operational configuration.
-- Gate: restart recovery, concurrent tasks, event ordering, and failure recovery verified.
+### Phase A — Freeze and identify the release baseline — READY
 
-### Phase 2 — Safe execution and repository operations
-- Build hardened sandbox adapter and configurable test profiles.
-- Store immutable input snapshot and base revision; validate patch scope.
-- Implement target worktree apply and real commit adapter with explicit authorization and conflict handling.
-- Gate: isolation checks, hostile archive/patch cases, stale-base rejection, and real Git integration verified.
+- Start from the reviewed `main` commit and confirm it matches the intended release revision.
+- Run the documented host-free release suite and preserve the sanitized result and commit SHA.
+- Review configuration examples, threat model, release blocker list, and sign-off template; keep secrets and repository contents out of evidence.
+- **Gate:** source revision, CI result, host-free verification result, and package identity are recorded. This proves build readiness only.
 
-### Phase 3 — Complete web product
-- Build responsive task submission, task list/detail, event timeline, diff viewer, evidence panels, and action flow.
-- Connect the UI to versioned API and surface loading, failure, empty, and retry states.
-- Gate: end-to-end API/worker journey from submission through staged evidence, human approval, patch application, and real Git commit is verified by [`relay-ai/tests/test_pipeline_e2e.py`](./relay-ai/tests/test_pipeline_e2e.py) with the deterministic fake provider and controlled sandbox result. The production sandbox runtime remains a separate Phase 2/H6 gate.
+### Phase B — Name the service and approve its operating boundary — BLOCKED
 
-### Phase 4 — Production readiness
-- Add authentication/authorization, rate limiting, retention controls, metrics/tracing, deployment configuration, backups, and incident/runbook documentation.
-- Run security review, load checks, accessibility review, and provider failure exercises.
-- Gate: documented threat model, SLOs, recovery procedures, and operational ownership.
+- Select the deployment host, public hostname, release/change window, and rollback owner.
+- Assign primary and backup operators, security/escalation contact, and SLO owner.
+- Obtain written approval for sending reports/repository source to the configured Gemini service, including the applicable data handling and retention terms.
+- Accept or revise the provisional availability, pipeline completion, queue latency, recovery point, and recovery time objectives.
+- Decide which optional integrations are enabled. Switch and GitHub live checks are required only if those integrations will be enabled in the release.
+- **Gate:** named owners, target, data-approval reference, SLO thresholds, integration scope, and change window are recorded without credentials.
+
+### Phase C — Prepare an isolated staging deployment — BLOCKED on Phase B
+
+- Provision service identity, secret storage, persistent data and applied-workspace directories, encrypted backup destination, TLS certificates, and monitoring/alert receiver.
+- Build the pinned sandbox image on the selected host; record its immutable image ID/digest. Never pull or build it implicitly during task execution.
+- Configure production authentication, HTTPS CORS origins, Nginx limits/headers, local repository allow-lists, retention, backup schedule, and log/metrics collection.
+- Use a staging hostname or network boundary; keep operator access restricted. Do not import customer or third-party source until data approval is effective.
+- **Gate:** configuration validation and preflight pass; secrets are present only in the host secret manager; service starts with production settings and reports readiness correctly.
+
+### Phase D — Run target-host and recovery verification — BLOCKED on Phase C
+
+- Run `deploy/run_target_host_drills.sh` and record sanitized Nginx, auth, CORS, health/readiness, delivery-header, sandbox-isolation, image-digest, and resource-limit evidence.
+- Run a controlled task using an approved test repository; verify source snapshot provenance, patch scope, sandbox evidence, reviewer gate, human approval, apply, and commit in the intended target copy.
+- Run the approved load profile and inspect latency, errors, queue recovery, memory/CPU, and worker concurrency against accepted thresholds.
+- Exercise a real backup freshness alert and restore a selected backup to a separate isolated location; verify database integrity, task/event history, source snapshot, and applied workspace.
+- Complete keyboard-only and supported screen-reader review, plus responsive/error-state review, and retest every release-blocking defect.
+- If enabled, verify Switch delivery to the provisioned room and GitHub read/PR behavior against a dedicated test repository and already-published matching SHAs. Keep these actions least-privileged and auditable.
+- **Gate:** every applicable H6/H10 blocker has named-owner evidence, no unresolved severity-1 security/recovery/accessibility defect remains, and all accepted thresholds pass.
+
+### Phase E — Controlled pilot and go/no-go — BLOCKED on Phase D
+
+- Limit access to named pilot operators and allow-listed repositories. Start with low task volume and non-sensitive or explicitly approved source.
+- Review every task outcome, audit record, notification, backup, alert, and support path during the agreed pilot period.
+- Roll back on isolation/authentication failure, unapproved data flow, unrecoverable task loss, unexpected target mutation, or SLO breach.
+- **Gate:** service owner, security owner, and operations owner sign the release record; unresolved blockers are explicitly accepted only if the release policy permits them. Otherwise keep the gate closed.
+
+### Phase F — Post-pilot hardening and scale decision — DEFERRED
+
+- Measure actual concurrency, queue delay, storage growth, token use/cost, failure rates, and operator effort before changing architecture.
+- If a multi-host or higher-throughput requirement is demonstrated, design and test a server database, shared queue/leases, distributed rate limiting, durable metrics, migration/rollback, and backup consistency before implementing them.
+- If identity requirements exceed controlled per-user bearer-token administration, select an identity provider and define account lifecycle, token rotation, revocation, and role governance before integration.
+- **Gate:** architecture expansion has an owner-approved workload and threat model, migration/recovery plan, and acceptance targets. Do not treat speculative scale work as a launch prerequisite for the approved single-host pilot.
 
 ## Current scope and assumptions
 
@@ -139,3 +165,5 @@ Secrets, raw credentials, and unnecessary source contents must not be copied int
 - Gemini remains the initial model provider behind an adapter boundary.
 - SQLite is suitable for an initial durable local deployment; production database/queue choices should be made before multi-instance deployment.
 - Applying changes to an external or arbitrary user repository is disabled unless a clean local Git target is explicitly allow-listed and bound to the task's expected base revision. GitHub PR access is separately allow-listed by repository ID and token; the adapter never publishes commits or merges/deploys them.
+- The immediate plan is to close the single-host release gates, not to claim a general SaaS or multi-tenant launch. Host selection, data approval, named owners, and target evidence are external prerequisites.
+- Dates for staging, pilot, or general availability are intentionally unset until the responsible owners select a host, change window, and acceptance thresholds.
