@@ -31,15 +31,30 @@ Planning source: [`PLAN.md`](./PLAN.md) defines sequence, dependencies, acceptan
 
 | Plan ID | Work | Status | Dependency / closure evidence |
 |---|---|---|---|
-| NEXT-01 | Freeze release commit and rerun CI plus host-free release checks | IN PROGRESS | Clean provisional candidate `564d8ba8cb865513dbc9715c92cca1eb281154bd`; host-free suite passed (backend 130 passed/3 skipped, frontend 20, compile/lint/build; preflight 3 PASS/5 ACTION REQUIRED/1 MANUAL/0 FAIL). Frontend JS/CSS SHA-256: `a2cc585b…53200` / `4ec779d4…1982`. CI/status lookup returned 404; Docker image identity could not be read because the local Docker socket denied access. Candidate is not frozen until CI and sandbox image/artifact identities are confirmed. |
+| NEXT-01 | Freeze release commit and rerun CI plus host-free release checks | BLOCKED | Clean candidate `ee827e4b3c72` passed host-free suite (backend 130 passed/3 skipped, frontend 20, compile/lint/build; preflight 3 PASS/5 ACTION REQUIRED/1 MANUAL/0 FAIL). Frontend JS/CSS SHA-256: `a2cc585b…53200` / `4ec779d4…1982`. On the actual remote (`vikasmanjunath-dev/Replay-AI`), this candidate has no commit statuses or workflow runs; remote `main` remains at `2449185`, and the connected GitHub account is read-only, so a candidate cannot be pushed to trigger CI. The local Docker daemon is unavailable, preventing image identity inspection. Resume when CI can be triggered and the pinned image can be inspected. |
 | NEXT-02 | Select target, hostname, owners, change window, and rollback path | BLOCKED | Service owner supplies H10-OWNERS information and selects the staging/production host and hostname. |
 | NEXT-03 | Approve provider data use, SLOs, load profile, backup/RPO/RTO, and integration scope | BLOCKED | Data owner, security owner, and SLO/service owner record approval references and numeric thresholds; decide whether Switch/GitHub live checks are in scope. |
 | NEXT-04 | Prepare isolated staging and protected configuration | BLOCKED | Start after NEXT-02 and NEXT-03 close; deployment owner provisions secrets, TLS/proxy, data/workspace/backup paths, alerting, monitoring, and target-built digest-pinned sandbox image; production preflight/readiness pass. |
 | NEXT-05 | Complete target-host security, lifecycle, load, recovery, and accessibility drills | BLOCKED | Start after NEXT-04 closes; close applicable H6/H10 rows with named-owner evidence; resolve and retest release-blocking findings. |
 | NEXT-06 | Run bounded pilot and sign go/no-go | BLOCKED | Start after NEXT-05 closes; named service, security, operations, and data owners review pilot evidence, residual risks, rollback readiness, and sign the release record. |
-| NEXT-07 | Decide on scale or enterprise identity work from pilot evidence | DEFERRED | Only start with measured workload/identity requirements and an approved design, threat model, migration plan, and acceptance targets. |
+| NEXT-07 | Select advanced capabilities from pilot evidence | DEFERRED | Choose only roadmap items A1–A8 in `PLAN.md` whose demand trigger is evidenced; approve owner, scope, threat review, migration/rollback, and measurable acceptance targets before implementation. |
 
 The detailed procedure and pass/fail conditions are in [`PLAN.md`](./PLAN.md). Optional Switch delivery and GitHub live PR verification are required only when the corresponding integration is enabled for the release; never provision credentials in chat or commit them.
+
+## Advanced feature backlog
+
+These are deliberately deferred until their triggers are evidenced after the pilot. See the detailed scope and acceptance criteria in [`PLAN.md`](./PLAN.md#8-advanced-feature-roadmap-after-the-pilot).
+
+| ID | Feature | Status | Start trigger |
+|---|---|---|---|
+| ADV-01 | Data governance and tenant lifecycle | DEFERRED | Approved broader source-data classes or contractual retention/deletion requirements |
+| ADV-02 | Enterprise identity and repository policy | DEFERRED | Static token administration fails an evidenced federation, revocation, or access-review need |
+| ADV-03 | Shared persistence and queue | DEFERRED | Pilot exceeds accepted single-host throughput or availability targets |
+| ADV-04 | Stronger sandbox isolation tiers | DEFERRED | Security review or approved pilot scope requires isolation beyond current container controls |
+| ADV-05 | Durable observability and SLO operations | DEFERRED | Owners need retained service-wide SLO reporting or actionable paging |
+| ADV-06 | Pipeline policy and cost controls | DEFERRED | Pilot records repeated unsafe patches, provider failures, or material cost variance |
+| ADV-07 | Team review and change workflow | DEFERRED | Named pilot users require shared ownership or separation of duties |
+| ADV-08 | Additional source-control providers | DEFERRED | A named customer/pilot requires another provider |
 
 ## User-directed priority queue
 
@@ -124,6 +139,14 @@ The detailed procedure and pass/fail conditions are in [`PLAN.md`](./PLAN.md). O
 | P5-02 | Handle restricted browser storage gracefully | DONE | Dashboard reads/writes/removals for theme, API token, and action idempotency keys are guarded against storage access exceptions. Theme falls back to system mode; session values use an in-memory fallback for the current page, and token-save feedback explains whether the browser persisted the value or it is memory-only. Node built-in regression tests cover allowed, denied, quota, and stale-removal cases and run in CI. |
 
 ## Update log
+
+### 2026-11-24 — Plan advanced post-pilot capabilities
+- Added deferred roadmap items ADV-01–ADV-08 for data governance, enterprise identity, shared persistence/queue, sandbox tiers, durable observability, policy/cost controls, team review, and additional source-control providers.
+- Each item has a demand trigger and acceptance evidence in `PLAN.md`; `TRACKER.md` links the backlog. No implementation starts before measured pilot demand and owner-approved scope.
+
+### 2026-11-24 — Verify NEXT-01 against the configured remote
+- Corrected the prior CI lookup target: the configured remote is `vikasmanjunath-dev/Replay-AI`. Its `main` remains at `2449185`; the exact candidate `ee827e4b3c72` has zero commit statuses and zero Actions runs. The connected GitHub account has read-only permission, so it cannot publish a candidate to trigger CI.
+- Docker sandbox image identity remains unverified because the local Docker daemon is unavailable. NEXT-01 is BLOCKED; no candidate freeze is claimed.
 
 ### 2026-11-24 — Run host-free release checks for NEXT-01
 - The first run found three ZIP test doubles that did not accept the new active-task-limit keyword; updated them to match the storage API.

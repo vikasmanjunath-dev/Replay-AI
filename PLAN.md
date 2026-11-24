@@ -1,7 +1,7 @@
 # RELAY AI End-to-End Delivery Plan
 
 **Planning date:** 2026-11-24 (Asia/Kolkata)  
-**Planning baseline:** `main` and `origin/main` both point to `2449185` (`chore: verify commit and push setup`); the checkout was clean before these planning edits.  
+**Planning baseline:** application candidate `ee827e4b3c72` passed host-free checks; this release-planning pass changes documentation only. CI and sandbox image identity remain unconfirmed.
 **Release posture:** local MVP implemented; single-host production/pilot gate remains closed pending named-owner and target-host evidence.
 
 This plan sequences the remaining work from the current repository baseline to a controlled pilot. `TRACKER.md` is the status ledger, `BLUEPRINT.md` is the product/architecture contract, `deploy/RELEASE_BLOCKERS.json` is the exact external-action list, and `deploy/RELEASE_SIGNOFF_TEMPLATE.json` is the evidence record. Update all four when a gate changes. Do not put secrets, source code, private URLs, or personal data in those files.
@@ -18,14 +18,14 @@ Run these stages in order. A blocked prerequisite stops dependent work; it does 
 
 | Stage | Work | Status | Depends on | Owner | Exit evidence |
 |---|---|---|---|---|---|
-| 0. Freeze release candidate | Confirm intended commit, clean tree, CI status, host-free release result, and build/image identities. | IN PROGRESS; clean candidate `564d8ba8cb865513dbc9715c92cca1eb281154bd` passed host-free checks, but CI/status lookup returned 404 and sandbox image inspection was denied by the local Docker socket | None | Release owner | Commit SHA, CI run, sanitized host-free report, artifact identities |
+| 0. Freeze release candidate | Confirm intended commit, clean tree, CI status, host-free release result, and build/image identities. | BLOCKED; clean candidate `ee827e4b3c72` passed host-free checks. On the actual remote (`vikasmanjunath-dev/Replay-AI`), the candidate has no commit statuses or workflow runs; `main` remains at `2449185`, and the connected GitHub account has read-only access. The local Docker daemon is unavailable, so sandbox image identity cannot be inspected. | None | Release owner | Commit SHA, CI run, sanitized host-free report, artifact identities |
 | 1. Establish service ownership and target | Select host, hostname, environment boundary, change window, rollback owner, primary/backup operator, and security/escalation contact. | BLOCKED | Owner decisions | Service owner | Named roles, target and hostname, approved change/rollback window |
 | 2. Approve data and service objectives | Approve Gemini source-data use/retention; decide enabled optional integrations; set queue/load profile, availability/completion objectives, backup age, RPO, and RTO. | BLOCKED | Stage 1 | Data owner, security owner, SLO owner | Approval reference, integration scope, accepted numeric thresholds |
 | 3. Prepare staging | Provision host identity, protected secrets, TLS, Nginx, persistent SQLite/workspace paths, encrypted backup destination, alert receiver, monitoring, and digest-pinned sandbox image. | TODO; blocked by Stages 1–2 | Stages 1–2 | Deployment operator | Sanitized config/preflight evidence, readiness, image digest, secret-store confirmation |
 | 4. Verify target and recovery | Run target-host drills, controlled task lifecycle, load profile, backup alert/restore, accessibility review, and only the live integrations selected in Stage 2. | BLOCKED; blocked by Stage 3 | Stage 3 | Security, operations, accessibility, integration owners | All applicable H6/H10 evidence references; failures and retests resolved |
 | 5. Approve and run controlled pilot | Restrict access to named operators and allow-listed test repositories; operate at agreed low volume and review task/audit/backup/alert outcomes. | TODO; blocked by Stage 4 | Stage 4 | Service, security, operations owners | Signed go/no-go, pilot window/results, rollback readiness, remaining-risk disposition |
 | 6. Decide on broader release | Decide whether evidence supports broader single-host use or whether access/workload requires more controls. | DEFERRED | Stage 5 | Product and service owners | Explicit release decision and scope |
-| 7. Scale only to measured need | If multi-host or higher throughput is required, design shared database/queue, rate limiting, metrics, migrations, and recovery as one separately reviewed program. | DEFERRED | Measured pilot demand | Architecture owner | Workload targets, failure model, migration and rollback plan, tested capacity evidence |
+| 7. Select advanced capabilities | Use the post-pilot backlog below; commission only the capabilities triggered by measured demand or a control gap. | DEFERRED | Stage 5 pilot evidence | Product, service, security, architecture owners | Approved capability brief with trigger evidence, scope, owner, risks, and acceptance thresholds |
 
 ## 3. Stage 1–2 decision checklist
 
@@ -90,13 +90,36 @@ Do not implement these without an observed requirement and an owner-approved des
 - **Additional repository operations:** any push, merge, branch creation, or deployment endpoint requires a separate threat model, narrowly scoped permission model, explicit user confirmation UX, audit semantics, rollback plan, and adversarial tests. These are out of current product scope.
 - **Data lifecycle:** before broader use, set source snapshot and event retention periods, backup retention, deletion guarantees, legal/data owner requirements, encryption-at-rest policy, and restore access controls.
 
-## 8. Definition of done and change control
+## 8. Advanced feature roadmap after the pilot
+
+These are planning candidates, not release commitments. Keep them deferred until the named trigger is observed and an owner approves a feature brief. Do not build scale, identity, or policy machinery solely for hypothetical demand.
+
+| Order | Feature area | Start when | Scope to plan | Acceptance evidence |
+|---|---|---|---|---|
+| A1 | Data governance and tenant lifecycle | Broader source-data classes or contractual retention/deletion requirements are approved | Per-tenant retention, deletion/export policy, encrypted backups, key rotation, model/data routing rules, and audited administrative access | Data-owner approval; deletion/restore drills; encryption/key-rotation evidence; no cross-tenant reads in negative tests |
+| A2 | Enterprise identity and repository policy | Static bearer-token administration cannot meet operator lifecycle, federation, or access review requirements | OIDC first; map groups to viewer/operator roles; per-repository task access; token revocation and break-glass procedure; keep repository IDs allow-listed | Login/revocation tests; cross-user and cross-repository denial tests; audit trail for role and policy changes |
+| A3 | Shared persistence and queue | Pilot measurements exceed the accepted single-host capacity or availability target | Select a transactional database and queue through an ADR; define migrations, idempotent delivery, fenced leases, global quotas, transactional outbox, backup consistency, and rollback | Approved workload target; crash/duplicate/partition drills; migration rollback; measured recovery and throughput against SLOs |
+| A4 | Sandbox isolation tiers | Security review or pilot scope requires stronger isolation for untrusted or public submissions | Compare hardened containers with microVM/runtime isolation; define network egress, resource budgets, image provenance, secret boundary, and cleanup | Independent threat review; adversarial escape tests; egress/resource verification; reproducible image provenance |
+| A5 | Durable observability and SLO operations | Pilot owners need retained service-wide SLOs or actionable paging beyond process-local metrics | OpenTelemetry-compatible traces/metrics, durable aggregation, queue and stage alerts, error budgets, and redacted audit export | Alert delivery drill; metric correctness across restart; SLO dashboard reconciles with task evidence and deletion policy |
+| A6 | Pipeline policy and cost controls | Pilot data shows repeated unsafe patches, provider failures, or material model cost variance | Versioned policy profiles, per-owner budgets/quotas, provider fallback rules, deterministic prompt/schema versions, and reviewer escalation; preserve human approval | Replayable policy decision records; budget boundary tests; failure/fallback drills; no automatic approval or merge |
+| A7 | Team review and change workflow | Pilot users need shared ownership or separation of duties | Reviewer assignment, optional second approval for selected repositories, review deadlines, escalation, and auditable handoff | Role matrix; self-approval and missing-approver denial tests; complete action/evidence audit |
+| A8 | Additional source-control providers | A named pilot/customer requires another provider | Provider-neutral repository interface, provider-specific least-privilege adapter, immutable revision checks, PR/MR semantics, and capability matrix | Contract suite per provider; permission review; stale revision and duplicate-request drills; provider failure does not alter task evidence |
+
+### Advanced-feature sequencing rules
+
+1. Close the controlled pilot and retain its workload, cost, failure, identity, and operator findings before selecting A1–A8.
+2. Resolve data governance and identity requirements before broadening users, repositories, or source-data classes.
+3. Start shared infrastructure only from measured capacity or availability gaps; carry out migration and rollback design before code.
+4. Preserve current safety boundaries: human approval stays mandatory; no push, merge, or deployment endpoint is implied by this roadmap.
+5. Give every selected feature an owner, baseline metric, target, migration/rollback plan, threat review, and evidence-backed `DONE` gate in `TRACKER.md`.
+
+## 9. Definition of done and change control
 
 For each implementation slice: define a single behavior; add/update focused tests; run the relevant suite; update `TRACKER.md`; update `BLUEPRINT.md` or `README.md` only when product/API behavior changes; preserve API compatibility or document migration; and review the diff for secrets, generated files, and unrelated artifacts. A task is `DONE` only with evidence, not because code exists. A host-dependent task is `BLOCKED` until its named owner supplies the missing resource and evidence. Do not store credentials in Git.
 
 For a release candidate, require a clean checkout, CI success for the exact commit, successful host-free release checks, a pinned sandbox image, all applicable Stage 4 passes, completed owner/data/SLO approvals, backup/restore evidence, and a signed go/no-go. The current plan stops before deployment because those owner/host inputs have not been selected.
 
-## 9. Current next actions
+## 10. Current next actions
 
 1. Service owner selects the target/hostname and names primary, backup, security, rollback, accessibility, data, and SLO owners.
 2. Data owner records Gemini data-use approval; service/SLO owners set numeric service and load targets.
