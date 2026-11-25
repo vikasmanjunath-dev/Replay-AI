@@ -44,10 +44,10 @@ The script runs `nginx -t`, verifies unauthenticated rejection and authenticated
 The default is a no-network dry run. Set `RELAY_LOAD_URL` to the bare HTTPS API origin and `RELAY_LOAD_TOKEN` in the protected environment, then preview the bounded profile:
 
 ```sh
-relay-ai/.venv/bin/python deploy/load_drill.py --tasks 2 --concurrency 2
+relay-ai/.venv/bin/python deploy/load_drill.py --tasks 2 --concurrency 2 --report-file /secure/evidence/load-drill.json
 ```
 
-Only after the service, data, and SLO owners approve that exact profile, add `--execute` to submit. `--ramp-seconds` spreads submissions across the approved ramp (zero is an immediate bounded burst); `--task-timeout` bounds the time spent waiting for the resulting tasks. The runner caps a sample at five tasks, records submission latency, final task states, and selected before/after Prometheus samples, and never prints the token or API error body. Save the JSON output in the protected evidence location; redact task IDs before recording a reference in the sign-off file. The result does not include host CPU/memory or prove sustained capacity, so pair it with host monitoring and the accepted profile's duration and thresholds. A timeout or failed task is a failed drill, not a pass.
+The dry run does not create the report file. Only after the service, data, and SLO owners approve that exact profile, add `--execute` to submit and save the JSON evidence. The report path's parent directory must already exist, and existing files are never overwritten. `--ramp-seconds` spreads submissions across the approved ramp (zero is an immediate bounded burst); `--task-timeout` bounds the time spent waiting for the resulting tasks. The runner caps a sample at five tasks, records submission latency, final task states, and selected before/after Prometheus samples, and never prints the token or API error body. Redact task IDs before recording a reference in the sign-off file. The result does not include host CPU/memory or prove sustained capacity, so pair it with host monitoring and the accepted profile's duration and thresholds. A timeout or failed task is a failed drill, not a pass.
 
 ## 4. Backup, alert, restore, and recovery
 
