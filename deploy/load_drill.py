@@ -10,9 +10,8 @@ import statistics
 import sys
 import time
 from collections import Counter
+from pathlib import Path
 from urllib.parse import urlsplit
-
-import httpx
 
 SCENARIO_ID = "scenario_checkout_discount_twice"
 MAX_TASKS = 5
@@ -47,7 +46,7 @@ def validate_origin(raw: str) -> str:
     return raw.rstrip("/")
 
 
-def read_metrics(client: httpx.Client, origin: str, headers: dict[str, str]) -> dict[str, list[str]]:
+def read_metrics(client, origin: str, headers: dict[str, str]) -> dict[str, list[str]]:
     response = client.get(f"{origin}/metrics", headers=headers)
     response.raise_for_status()
     values: dict[str, list[str]] = {}
@@ -61,6 +60,8 @@ def read_metrics(client: httpx.Client, origin: str, headers: dict[str, str]) -> 
 
 
 def submit_one(origin: str, token: str, timeout: float) -> tuple[str | None, float, int | None, str | None]:
+    import httpx
+
     started = time.monotonic()
     headers = {"Authorization": f"Bearer {token}"} if token else {}
     try:
@@ -92,6 +93,8 @@ def submit_one(origin: str, token: str, timeout: float) -> tuple[str | None, flo
 
 
 def poll_tasks(origin: str, token: str, task_ids: list[str], timeout: float, poll_seconds: float) -> dict[str, str]:
+    import httpx
+
     headers = {"Authorization": f"Bearer {token}"} if token else {}
     deadline = time.monotonic() + timeout
     states = {task_id: "PENDING" for task_id in task_ids}
@@ -119,6 +122,21 @@ def poll_tasks(origin: str, token: str, task_ids: list[str], timeout: float, pol
     return states
 
 
+def validate_report_path(raw: str) -> Path:
+    path = Path(raw).expanduser()
+    if path.exists() or path.is_symlink():
+        raise ValueError("Report file already exists; choose a new path to preserve prior evidence.")
+    if not path.parent.is_dir():
+        raise ValueError("Report parent directory must already exist.")
+    return path
+
+
+def write_report(path: Path, report: dict[str, object]) -> None:
+    with path.open("x", encoding="utf-8", newline="\n") as output:
+        json.dump(report, output, indent=2, sort_keys=True)
+        output.write("\n")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--origin", default=os.environ.get("RELAY_LOAD_URL", ""), help="bare API origin; defaults to RELAY_LOAD_URL")
@@ -128,6 +146,7 @@ def main() -> int:
     parser.add_argument("--ramp-seconds", type=float, default=0, help="spread submissions across this many seconds (default: 0, immediate bounded burst)")
     parser.add_argument("--task-timeout", type=float, default=900, help="maximum seconds to await terminal task states (default: 900)")
     parser.add_argument("--poll-seconds", type=float, default=2, help="seconds between task status polls (default: 2)")
+    parser.add_argument("--report-file", help="write execution report JSON to a new file; parent must exist and existing files are never overwritten")
     parser.add_argument("--execute", action="store_true", help="send requests and create persistent tasks; without this flag only validate and print the plan")
     args = parser.parse_args()
 
@@ -146,12 +165,25 @@ def main() -> int:
     if len(token) > 4096 or any(char in token for char in "\r\n"):
         print(f"BLOCKED: {args.token_env} must contain a valid bearer token.", file=sys.stderr)
         return 2
+    report_path = None
+    if args.report_file:
+        try:
+            report_path = validate_report_path(args.report_file)
+        except ValueError as error:
+            print(f"BLOCKED: {error}", file=sys.stderr)
+            return 2
     print(f"Target: {origin}; scenario: {SCENARIO_ID}; tasks: {args.tasks}; submission concurrency: {args.concurrency}; ramp: {args.ramp_seconds}s.")
     if not args.execute:
         print("DRY RUN: no HTTP requests were sent. Review the profile, then add --execute to create persistent tasks and trigger provider/sandbox work.")
         return 0
     if not token:
         print(f"BLOCKED: set {args.token_env} in the protected environment before execution.", file=sys.stderr)
+        return 2
+
+    try:
+        import httpx
+    except ImportError:
+        print("BLOCKED: install relay-ai/requirements.txt to run the HTTP load drill.", file=sys.stderr)
         return 2
 
     headers = {"Authorization": f"Bearer {token}"}
@@ -209,7 +241,15 @@ def main() -> int:
         "metrics_after_error": metrics_after_error,
         "submission_errors": len(errors),
     }
-    print(json.dumps(report, indent=2, sort_keys=True))
+    report_json = json.dumps(report, indent=2, sort_keys=True)
+    print(report_json)
+    if report_path is not None:
+        try:
+            write_report(report_path, report)
+        except OSError:
+            print("FAIL: report could not be saved; the JSON remains available above. Check the protected output path.", file=sys.stderr)
+            return 1
+        print(f"Report saved to: {report_path}")
     if errors:
         print(f"{len(errors)} submission(s) failed; details suppressed.", file=sys.stderr)
     print("Tasks remain in the target database for normal operator review and retention handling.")
