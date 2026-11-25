@@ -1,6 +1,6 @@
 # RELAY AI release verification runbook
 
-Status as of 2026-11-24: host-free preparation is complete; deployment-host and named-owner work is blocked because no target host or owners have been selected. The end-to-end sequence is in [`PLAN.md`](../PLAN.md); see [`RELEASE_BLOCKERS.json`](./RELEASE_BLOCKERS.json) for the exact ask and state for each action. Store evidence references in [`RELEASE_SIGNOFF_TEMPLATE.json`](./RELEASE_SIGNOFF_TEMPLATE.json). Never put secrets or source code in the evidence file. A planning update does not close a blocker or authorize deployment.
+Status as of 2026-11-25: host-free preparation is complete; deployment-host and named-owner work is blocked because no target host or owners have been selected. The end-to-end sequence is in [`PLAN.md`](../PLAN.md); see [`RELEASE_BLOCKERS.json`](./RELEASE_BLOCKERS.json) for the exact ask and state for each action. Store evidence references in [`RELEASE_SIGNOFF_TEMPLATE.json`](./RELEASE_SIGNOFF_TEMPLATE.json). Never put secrets or source code in the evidence file. A planning update does not close a blocker or authorize deployment.
 
 ## 1. Before scheduling a host window
 
@@ -36,6 +36,18 @@ After the host owner has installed the release and configured protected environm
    ```
 
 The script runs `nginx -t`, verifies unauthenticated rejection and authenticated `/health`, `/ready`, and `/metrics`, checks delivery headers and CORS behavior, then enables the opt-in Docker isolation probe. It fails on any missing prerequisite or failed check. It does not reload Nginx, restart services, change firewall rules, or deploy a release.
+
+### Approved queue/load profile
+
+`deploy/load_drill.py` prepares and runs a bounded queue sample against the seeded checkout scenario. Agree on the target, task count, concurrency, duration, error/latency thresholds, and provider-data approval before running it. Each submitted task invokes the configured model and sandbox, consumes provider/host resources, and remains in the target database for normal review and retention handling. Use an idle test deployment and an operator token from its secret manager; do not run against production without explicit owner approval.
+
+The default is a no-network dry run. Set `RELAY_LOAD_URL` to the bare HTTPS API origin and `RELAY_LOAD_TOKEN` in the protected environment, then preview the bounded profile:
+
+```sh
+relay-ai/.venv/bin/python deploy/load_drill.py --tasks 2 --concurrency 2
+```
+
+Only after the service, data, and SLO owners approve that exact profile, add `--execute` to submit. `--ramp-seconds` spreads submissions across the approved ramp (zero is an immediate bounded burst); `--task-timeout` bounds the time spent waiting for the resulting tasks. The runner caps a sample at five tasks, records submission latency, final task states, and selected before/after Prometheus samples, and never prints the token or API error body. Save the JSON output in the protected evidence location; redact task IDs before recording a reference in the sign-off file. The result does not include host CPU/memory or prove sustained capacity, so pair it with host monitoring and the accepted profile's duration and thresholds. A timeout or failed task is a failed drill, not a pass.
 
 ## 4. Backup, alert, restore, and recovery
 
