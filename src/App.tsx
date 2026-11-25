@@ -3,6 +3,7 @@ import { Activity, ArrowRight, Check, CircleAlert, FileArchive, LoaderCircle, Mo
 import { AbortableRequests } from './abortableRequests.js';
 import { describeRequestError } from './userFacingError.js';
 import { getSessionBadgeLabel } from './dashboardLabels.js';
+import { getActivityWarningMessage, watchBrowserActivity } from './activityWarning.js';
 import { readStorage, removeStorage, writeStorage } from './safeStorage.js';
 
 type TimelineEvent = { timestamp: string; stage: string; status: string; actor?: string; correlation_id?: string | null; details: Record<string, unknown> };
@@ -95,6 +96,7 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const [activityWarning, setActivityWarning] = useState('');
   const [apiToken, setApiToken] = useState(() => readStorage('session', 'relay-api-token') || '');
   const [tokenRevision, setTokenRevision] = useState(0);
   const [readiness, setReadiness] = useState<Readiness>({ status: 'checking' });
@@ -129,6 +131,7 @@ export default function App() {
   const [githubBranchesReload, setGithubBranchesReload] = useState(0);
 
   const resolvedTheme = themePreference === 'system' ? (systemDark ? 'dark' : 'light') : themePreference;
+  useEffect(() => watchBrowserActivity(document, (trigger) => setActivityWarning(getActivityWarningMessage(trigger))), []);
   useEffect(() => {
     const preference = window.matchMedia('(prefers-color-scheme: dark)');
     const update = (event: MediaQueryListEvent) => setSystemDark(event.matches);
@@ -379,6 +382,7 @@ export default function App() {
   const selectedBaseBranch = githubBranches.find((branch) => branch.name === prBase.trim());
   return <div className="layout">
     <a className="skip-link sr-only" href="#main-content">Skip to main content</a>
+    {activityWarning && <div className="activity-warning" role="status" aria-live="polite" aria-atomic="true"><CircleAlert size={16} aria-hidden="true"/><span>{activityWarning}</span><button aria-label="Dismiss browser activity warning" onClick={() => setActivityWarning('')}><X size={15}/></button></div>}
     <aside className="sidebar">
       <div className="brand"><span className="brand-icon">R</span><div><b>relay<span>.ai</span></b><small>ENGINEERING PIPELINE</small></div></div>
       <div className="side-caption">WORKSPACE</div><div className="nav-current"><Activity size={16}/> Pipeline</div>
