@@ -1,6 +1,6 @@
 # RELAY AI Build Tracker
 
-Last updated: 2026-11-25 (Asia/Kolkata)
+Last updated: 2026-11-26 (Asia/Kolkata)
 
 ## Status key
 
@@ -104,7 +104,7 @@ These are deliberately deferred until their triggers are evidenced after the pil
 | H10-BACKUP-ALERT | Verify production backup alert delivery | BLOCKED | Exact ask: assign the alert receiver/owner, store its HTTPS webhook in the host secret manager, trigger one freshness-alert drill, and record confirmation without the URL. |
 | H10-RESTORE-DRILL | Restore a production backup in isolation | BLOCKED | Exact ask: name the recovery operator and approve a maintenance window; restore a selected production archive to a new isolated path, verify SQLite/task/workspace integrity, and record archive reference/outcome. |
 | H10-ACCESSIBILITY-REVIEW | Complete owner keyboard and screen-reader review | BLOCKED | Local browser evidence: keyboard traversal reaches all current controls and cycles without a trap; Enter on the skip link focuses `main-content` and the skip link has a visible focus ring; Space opens the status filter and ArrowDown changes its value. The AX tree announces API OFFLINE and named retry/dismiss controls; widths 320, 390, 768, and 1280px have no horizontal overflow; sampled light/dark text ratios exceed 4.5:1. Exact remaining ask: assign a reviewer and browser/assistive-technology pair; complete native screen-reader review (including focus order and announcements), record browser/AT versions, defects, and retests. |
-| H10-LOAD-REVIEW | Complete target-host queue/load review | BLOCKED | Prepared `deploy/load_drill.py`: no-network by default, seeded checkout workload, maximum five tasks, configurable concurrency/ramp/task timeout, explicit `--execute`, task-state/latency and selected Prometheus evidence. The runbook explains provider usage, persistent tasks, owner approval, and evidence handling. Not executed: choose target host and approve concurrency, ramp, duration, and latency/error thresholds; run the drill with host monitoring and record results. |
+| H10-LOAD-REVIEW | Complete target-host queue/load review | BLOCKED | Prepared `deploy/load_drill.py`: no-network by default, seeded checkout workload, maximum five tasks, configurable concurrency/ramp/task timeout, explicit `--execute`, task-state/latency and selected Prometheus evidence, and optional non-overwriting JSON report output. Not executed: choose target host and approve concurrency, ramp, duration, and latency/error thresholds; run the drill with host monitoring and record results. |
 | H10-OWNERS | Assign service and escalation owners | BLOCKED | Exact ask: name primary operator, backup operator, security contact, incident path, and change/rollback owner. |
 | H10-GEMINI-DATA-APPROVAL | Approve provider source-data handling | BLOCKED | Exact ask: obtain the data owner's written approval for report/repository data sent to Gemini, including applicable handling and retention terms; record only the approval reference. |
 | H10-SLO-ACCEPTANCE | Accept operational service objectives | BLOCKED | Exact ask: assign an SLO owner and obtain service-owner acceptance of availability, completion, queue-latency, recovery-point, and recovery-time objectives or revised thresholds. |
@@ -139,6 +139,12 @@ These are deliberately deferred until their triggers are evidenced after the pil
 | P5-02 | Handle restricted browser storage gracefully | DONE | Dashboard reads/writes/removals for theme, API token, and action idempotency keys are guarded against storage access exceptions. Theme falls back to system mode; session values use an in-memory fallback for the current page, and token-save feedback explains whether the browser persisted the value or it is memory-only. Node built-in regression tests cover allowed, denied, quota, and stale-removal cases and run in CI. |
 
 ## Update log
+
+### 2026-11-26 — Add JSON report export to the load drill
+- Added `--report-file` to save the completed load-drill evidence as formatted JSON. The path must have an existing parent directory; the tool refuses to overwrite an existing report, and dry runs create no file.
+- Added four focused tests for JSON round-trip, overwrite protection, invalid parent directories, dry-run behavior, and execution-report integration; all four pass. Python syntax and `git diff --check` pass. The full backend suite could not collect on this Windows Python 3.15 host because existing modules import Unix-only `resource` and `fcntl`; run it in the project's supported Linux/Python environment.
+- Updated the root README and release runbook.
+- H10-LOAD-REVIEW remains BLOCKED pending target/owner approvals and host execution.
 
 ### 2026-11-25 — Prepare the bounded target-host queue/load drill
 - Added `deploy/load_drill.py` for an owner-approved seeded checkout workload. It has a no-network dry-run default, requires `--execute` to create persistent tasks, caps each sample at five tasks, supports concurrency/ramp/task-timeout profile inputs, suppresses credential/error details, and reports submission latency, final states, and selected before/after API metrics.
